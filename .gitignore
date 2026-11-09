@@ -1,0 +1,11 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# 비밀값: 키를 저장소에 남기지 않는다 (절대 규칙 6)
+.env
+.env.*
+!.env.example
+# 케이스 폴더에는 광고주 개인정보가 들어간다
+cases/
+cases-fake/

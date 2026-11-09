@@ -1,0 +1,72 @@
+:root {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --ink: #1f1d1a;
+  --muted: #6b665e;
+  --line: #e4e0d8;
+  --accent: #b4541f;
+  --accent-ink: #ffffff;
+  --gate: #7a3fb0;
+  --tag-intake: #e3eefc;
+  --tag-ai: #ececec;
+  --tag-user: #fff0d6;
+  --tag-estimate: #fde2e2;
+  --ok: #2f7d4a;
+  --err: #b42318;
+  --warn: #a15c00;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514; --panel: #201f1d; --ink: #eeeae4; --muted: #a59f95; --line: #34312d;
+    --accent: #e07a3f; --tag-intake: #1d2c44; --tag-ai: #2c2c2c; --tag-user: #3e3018; --tag-estimate: #4a2222;
+    --ok: #5cc380; --err: #ff7b6e; --warn: #f0b04a; --gate: #b98be0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; line-height: 1.55; }
+a { color: var(--accent); }
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 14px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+input[type=text], input[type=tel], textarea { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+textarea { min-height: 96px; resize: vertical; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px; }
+.narrow { max-width: 520px; margin: 0 auto; padding: 20px 16px 120px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stack > * + * { margin-top: 12px; }
+.err { color: var(--err); }
+.warn { color: var(--warn); }
+.okc { color: var(--ok); }
+.tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 999px; margin: 1px 2px; white-space: nowrap; }
+.tag.intake { background: var(--tag-intake); }
+.tag.ai { background: var(--tag-ai); }
+.tag.user { background: var(--tag-user); }
+.tag.estimate { background: var(--tag-estimate); font-weight: 600; }
+.choice { display: block; width: 100%; text-align: left; padding: 12px 14px; margin-top: 8px; }
+.choice.on { border-color: var(--accent); outline: 2px solid var(--accent); }
+.progress { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--accent); }
+.bottombar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 16px; }
+.bottombar .inner { max-width: 1180px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.console { display: grid; grid-template-columns: 200px 1fr; gap: 20px; padding-bottom: 110px; }
+@media (max-width: 800px) { .console { grid-template-columns: 1fr; } }
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li { padding: 8px 10px; border-radius: 8px; font-size: 14px; color: var(--muted); }
+.steps li.done { color: var(--ink); }
+.steps li.now { background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-weight: 600; }
+.steps li.gate { border-left: 3px solid var(--gate); color: var(--gate); font-weight: 600; }
+table.brief { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.brief th, table.brief td { border-bottom: 1px solid var(--line); padding: 8px 6px; vertical-align: top; text-align: left; }
+table.brief th { color: var(--muted); font-weight: 500; }
+.table-scroll { overflow-x: auto; }
+.ideas { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.idea.on { outline: 3px solid var(--accent); }
+.check { border-left: 3px solid var(--line); padding: 10px 12px; }
+.check.open { border-left-color: var(--warn); }
+.check.closed { border-left-color: var(--ok); }
+h1 { font-size: 22px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 28px 0 10px; }
+h3 { font-size: 16px; margin: 0 0 6px; }

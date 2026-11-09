@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "submittedAt": "2026-11-09T09:00:00.000Z",
+  "consent": { "aiNotice": true, "privacy": true, "portfolio": false, "consentedAt": "2026-11-09T08:58:00.000Z" },
+  "contact": { "company": "달빛쿠키", "contactName": "가상 담당자", "phone": "010-0000-0000" },
+  "answers": {
+    "1": { "text": "동네에서 매일 아침 직접 굽는 수제 쿠키. 초코칩, 오트밀, 말차 쿠키를 판다.", "unknown": false },
+    "2": { "text": "", "unknown": true },
+    "3": { "choice": null, "unknown": true },
+    "4": { "text": "가게가 골목 안쪽이라 지나가는 사람이 잘 모르고, 단체 주문 문의가 거의 없다.", "unknown": false },
+    "5": { "competitors": [
+      { "name": "역 앞 프랜차이즈 베이커리", "url": "" },
+      { "name": "옆 동네 쿠키 공방", "url": "https://www.instagram.com/example_cookie_lab" }
+    ], "unknown": false },
+    "6": { "text": "버터 100% 사용, 방부제를 넣지 않고 그날 구운 것만 판다.", "unknown": false },
+    "7": { "must": "매일 아침 직접 굽는", "avoid": "최고, 무첨가", "unknown": false },
+    "8": { "likes": "", "dislikes": "", "unknown": true },
+    "9": { "hasProduct": true },
+    "10": { "assets": ["제품 사진", "로고 파일"], "text": "휴대폰으로 찍은 쿠키 사진 몇 장", "unknown": false },
+    "11": { "channels": [], "unknown": true }
+  }
+}

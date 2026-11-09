@@ -1,0 +1,20 @@
+{
+  "_note": "미정 항목은 임의로 정하지 않는다. 값이 \"미정\"이면 화면과 문서에 그대로 표시한다. (docs/decisions.md)",
+  "llm": {
+    "backend": "claude-cli",
+    "cliPath": "claude",
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "maxTokens": 32000
+  },
+  "casesDir": "cases",
+  "revision": {
+    "includedCount": "미정",
+    "includedCountRange": "1~3회"
+  },
+  "pricing": "미정",
+  "privacyRetention": "미정 (납품 후 ○년)",
+  "imageModel": "미정",
+  "defaultVariants": 2,
+  "composeBackend": "html"
+}

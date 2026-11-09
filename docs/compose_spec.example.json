@@ -1,0 +1,16 @@
+{
+  "case": "cookie-shop-2026-11",
+  "variant": "A",
+  "backend": "html",
+  "template": "banner-square-v1",
+  "texts": {
+    "headline": "아이 간식, 성분이 걱정되시죠",
+    "sub": "직접 굽는 수제 쿠키",
+    "cta": "상담 신청"
+  },
+  "image": "04_images/pick_03.png",
+  "logo": "assets/logo.svg",
+  "overlay": { "top": 0.0, "bottom": 0.35 },
+  "sizes": ["1080x1080", "1200x628", "320x100"],
+  "export": ["png"]
+}
