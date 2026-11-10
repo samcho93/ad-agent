@@ -8,6 +8,7 @@ import { Cases } from "./ui/pages/Cases";
 import CasePage from "./ui/pages/CaseDetail";
 import { SettingsPage } from "./ui/pages/Settings";
 import { ProofPage } from "./ui/pages/ProofPage";
+import { HelpPage } from "./ui/pages/Help";
 import { PROVIDER_LABEL } from "./llm/select";
 import { currentModel } from "./core/settings";
 
@@ -20,6 +21,7 @@ function Nav({ route }: { route: string[] }) {
       <a href={href("intake")} className={on("intake")}>질문지</a>
       <a href={href("cases")} className={on("cases")}>케이스</a>
       <a href={href("settings")} className={on("settings")}>설정</a>
+      <a href={href("help")} className={on("help")}>도움말</a>
       <span className="spacer" />
       <span className="small muted">{PROVIDER_LABEL[settings.llm.provider]} · {store.label}</span>
     </nav>
@@ -66,6 +68,9 @@ function Router() {
       break;
     case "proof":
       page = <ProofPage />;
+      break;
+    case "help":
+      page = <HelpPage />;
       break;
     default:
       page = <Home />;
