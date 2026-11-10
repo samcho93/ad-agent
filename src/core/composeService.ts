@@ -1,5 +1,5 @@
 import type { CaseService } from "./caseService";
-import { CaseError } from "./caseService";
+import { CaseError, reached } from "./caseService";
 import { ImageService } from "./imageService";
 import { type ComposeDoc, type SizeKey, type Variant, copyIssues, defaultComposeDoc, toComposeSpec } from "./compose";
 import { bannedPhrases, intakeCorpus } from "./intake";
@@ -25,7 +25,8 @@ export class ComposeService {
 
   async assertOpen(id: string) {
     const meta = await this.svc.getMeta(id);
-    if (meta.status !== "images_selected" && meta.status !== "compose_done") throw new CaseError("이미지를 확정한 뒤에 합성할 수 있습니다");
+    if (!reached(meta.status, "images_selected")) throw new CaseError("이미지를 확정한 뒤에 합성할 수 있습니다");
+    if (reached(meta.status, "gate2_approved")) throw new CaseError("게이트 2를 통과한 시안은 바꿀 수 없습니다. 수정 요청을 기록하면 다시 열립니다");
     return meta;
   }
 
@@ -36,9 +37,10 @@ export class ComposeService {
 
   /** 없으면 고른 아이디어·이미지로 첫 명세를 만든다 */
   async ensureDoc(id: string, by: string): Promise<ComposeDoc> {
-    await this.assertOpen(id);
+    // 이미 있으면 (게이트 2 뒤 잠긴 상태라도) 보기용으로 돌려준다
     const existing = await this.getDoc(id);
-    if (existing) return existing;
+    if (existing && reached((await this.svc.getMeta(id)).status, "images_selected")) return existing;
+    await this.assertOpen(id);
     const ideas = await this.svc.getIdeas(id);
     const idea = ideas?.ideas.find((x) => x.id === ideas.selectedId);
     const brief = await this.svc.getBrief(id);
@@ -66,7 +68,8 @@ export class ComposeService {
     // A/B 는 그림·배치가 같아야 한다: shared 는 하나뿐이라 구조상 보장된다
     const next: ComposeDoc = { ...doc, version: 1, updatedAt: new Date().toISOString(), updatedBy: by.trim() };
     await this.write(id, next);
-    if (meta.status === "compose_done" && JSON.stringify(prev?.variants) + JSON.stringify(prev?.shared) !== JSON.stringify(next.variants) + JSON.stringify(next.shared)) {
+    // 합성 완료·검수 완료 뒤에 고치면 다시 저장·검수하게 되돌린다
+    if (meta.status !== "images_selected" && JSON.stringify(prev?.variants) + JSON.stringify(prev?.shared) !== JSON.stringify(next.variants) + JSON.stringify(next.shared)) {
       await this.svc.setStatus(id, "images_selected");
     }
     return next;

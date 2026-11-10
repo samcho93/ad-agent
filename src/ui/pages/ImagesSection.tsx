@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { reached, type CaseStatus } from "@/core/caseService";
 import { ImageService } from "@/core/imageService";
 import { ASSET_KIND_LABEL, ROUTE_LABEL, applicableCriteria, type AssetKind, type ImageItem, type ImagesDoc } from "@/core/images";
 import { generateImagePrompt } from "@/llm/imagePipeline";
@@ -63,7 +64,8 @@ function areaOf(label: string): Area {
 }
 
 export function ImagesSection({ caseId, name, status, onName, onChanged }: { caseId: string; name: string; status: string; onName: (v: string) => void; onChanged: () => void }) {
-  const confirmed = status === "images_selected" || status === "compose_done";
+  const confirmed = reached(status as CaseStatus, "images_selected");
+  const locked = reached(status as CaseStatus, "gate2_approved");
   const { svc, generator, secrets } = useApp();
   const images = useMemo(() => new ImageService(svc), [svc]);
   const [doc, setDoc] = useState<ImagesDoc | null>(null);
@@ -128,7 +130,8 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
   const discarded = doc.items.length - visibleItems.length;
 
   return (
-    <div className="stack">
+    <fieldset disabled={locked} className="plain stack">
+      {locked && <p className="small muted" style={{ margin: 0 }}>게이트 2를 통과해 잠겼습니다. 바꾸려면 아래 납품 단계에서 수정 요청을 기록하세요.</p>}
       <div className="row small">
         <label className="row">작업자 이름 <input type="text" style={{ width: 160 }} value={name} onChange={(e) => onName(e.target.value)} placeholder="이미지 기록에 남습니다" /></label>
         {!name.trim() && <span className="warn">이름을 적어야 이미지를 올리고 고를 수 있습니다</span>}
@@ -343,7 +346,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
         </div>
         <AreaErr area="complete" />
       </div>
-    </div>
+    </fieldset>
   );
 }
 

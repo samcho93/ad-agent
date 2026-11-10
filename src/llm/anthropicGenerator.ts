@@ -34,7 +34,20 @@ export function createAnthropicGenerator(opts: AnthropicOptions): Generator {
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
           system: req.system,
-          messages: [{ role: "user", content: req.user }],
+          messages: [
+            {
+              role: "user",
+              content: req.images?.length
+                ? [
+                    ...req.images.flatMap((im) => [
+                      { type: "text" as const, text: im.label },
+                      { type: "image" as const, source: { type: "base64" as const, media_type: im.mime, data: im.base64 } },
+                    ]),
+                    { type: "text" as const, text: req.user },
+                  ]
+                : req.user,
+            },
+          ],
         })
         .finalMessage();
     } catch (e) {

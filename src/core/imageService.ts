@@ -1,5 +1,5 @@
 import type { CaseService } from "./caseService";
-import { CaseError } from "./caseService";
+import { CaseError, reached } from "./caseService";
 import {
   type Asset,
   type AssetKind,
@@ -36,7 +36,9 @@ export class ImageService {
 
   async assertOpen(id: string) {
     const meta = await this.svc.getMeta(id);
-    if (meta.status !== "gate1_approved" && meta.status !== "images_selected" && meta.status !== "compose_done") throw new CaseError("게이트 1 승인 뒤에 이미지 단계를 진행할 수 있습니다");
+    if (!reached(meta.status, "gate1_approved")) throw new CaseError("게이트 1 승인 뒤에 이미지 단계를 진행할 수 있습니다");
+    // 게이트 2를 통과한 시안은 잠근다. 고치려면 광고주 수정 요청(또는 수정 시작)으로 되돌린다
+    if (reached(meta.status, "gate2_approved")) throw new CaseError("게이트 2를 통과한 시안은 바꿀 수 없습니다. 수정 요청을 기록하면 다시 열립니다");
     return meta;
   }
 
@@ -49,7 +51,7 @@ export class ImageService {
     await this.store.write(id, DOC, JSON.stringify(doc, null, 2) + "\n");
     // 이미지를 바꾸면 "이미지 확정"(과 그 뒤 합성 완료)을 풀어 다시 확인하게 한다
     const meta = await this.svc.getMeta(id);
-    if (meta.status === "images_selected" || meta.status === "compose_done") await this.svc.setStatus(id, "gate1_approved");
+    if (reached(meta.status, "images_selected")) await this.svc.setStatus(id, "gate1_approved");
   }
 
   async log(id: string, entry: Record<string, unknown>) {

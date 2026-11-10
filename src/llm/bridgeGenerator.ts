@@ -49,9 +49,14 @@ export function createBridgeGenerator(opts: BridgeOptions): Generator {
       system: req.system,
       user: req.user,
       jsonSchema,
+      ...(req.images?.length ? { images: req.images } : {}),
       model: opts.model,
       effort: opts.effort,
     });
+    // 예전 브리지는 images 를 모르고 무시한다. 이미지 없이 판단한 결과를 쓰지 않게 막는다
+    if (req.images?.length && j.images_seen !== req.images.length) {
+      throw new GenerationError("이 브리지 버전은 이미지 검수를 지원하지 않습니다. 브리지 파일을 새로 받아 다시 실행하세요 (0.2.0 이상)");
+    }
     const parsed = req.schema.safeParse(j.structured_output);
     if (!parsed.success) {
       throw new GenerationError(`모델 출력이 스키마와 다릅니다: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);

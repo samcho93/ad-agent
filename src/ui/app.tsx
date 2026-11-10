@@ -145,7 +145,16 @@ export function downloadJson(filename: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function pickJsonFile(): Promise<unknown> {
+export function downloadBytes(filename: string, bytes: Uint8Array, type = "application/octet-stream") {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function pickJsonFile(maxMB = 20): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -153,7 +162,7 @@ export function pickJsonFile(): Promise<unknown> {
     input.onchange = async () => {
       const f = input.files?.[0];
       if (!f) return reject(new Error("파일을 고르지 않았습니다"));
-      if (f.size > 20 * 1024 * 1024) return reject(new Error("파일이 너무 큽니다 (20MB 이하)"));
+      if (f.size > maxMB * 1024 * 1024) return reject(new Error(`파일이 너무 큽니다 (${maxMB}MB 이하)`));
       try {
         resolve(JSON.parse(await f.text()));
       } catch {

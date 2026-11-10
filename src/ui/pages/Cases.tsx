@@ -8,7 +8,11 @@ const STATUS: Record<string, string> = {
   ideas_draft: "아이디어 초안",
   gate1_approved: "게이트 1 승인 · 이미지 단계",
   images_selected: "이미지 확정 · 합성 단계",
-  compose_done: "합성 완료",
+  compose_done: "합성 완료 · 검수 단계",
+  qa_done: "검수 완료 · 게이트 2",
+  gate2_approved: "게이트 2 통과 · 광고주 확인",
+  client_selected: "광고주 확정 · 납품 전",
+  delivered: "납품 완료",
 };
 
 export function Cases() {

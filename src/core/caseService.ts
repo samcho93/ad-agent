@@ -18,7 +18,23 @@ export const STAGES = [
   { key: "export", label: "납품" },
 ] as const;
 
-export type CaseStatus = "intake_done" | "brief_draft" | "ideas_draft" | "gate1_approved" | "images_selected" | "compose_done";
+/** 진행 순서대로. 뒤로 갈수록 앞 단계 산출물이 잠긴다 */
+export const STATUS_ORDER = [
+  "intake_done",
+  "brief_draft",
+  "ideas_draft",
+  "gate1_approved",
+  "images_selected",
+  "compose_done",
+  "qa_done",
+  "gate2_approved",
+  "client_selected",
+  "delivered",
+] as const;
+export type CaseStatus = (typeof STATUS_ORDER)[number];
+
+/** status 가 target 단계에 이르렀거나 지났는지 */
+export const reached = (status: CaseStatus, target: CaseStatus) => STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target);
 
 export interface CaseMeta {
   id: string;
@@ -52,7 +68,7 @@ export interface CaseBundle {
 const BINARY_RE = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
 export const isBinaryName = (name: string) => BINARY_RE.test(name);
 
-async function blobToBase64(blob: Blob): Promise<string> {
+export async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -80,6 +96,11 @@ export class CaseService {
     readonly store: CaseStore,
     private settings: () => Settings,
   ) {}
+
+  /** 지금 설정 (검수·수정 횟수 표시 등에서 읽는다) */
+  get currentSettings(): Settings {
+    return this.settings();
+  }
 
   /* ---------------- 읽기 ---------------- */
 
@@ -150,7 +171,7 @@ export class CaseService {
   }
 
   private assertNotLocked(meta: CaseMeta) {
-    if (meta.status === "gate1_approved" || meta.status === "images_selected" || meta.status === "compose_done") throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
+    if (reached(meta.status, "gate1_approved")) throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
   }
 
   /** 단계 상태만 바꾼다 (이미지 단계 등에서 사용) */

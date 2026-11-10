@@ -15,7 +15,7 @@
  * - 127.0.0.1 에만 열린다 (다른 PC에서 접속 불가).
  * - 허용 목록의 웹 주소(Origin)에서 온 요청만 받는다. Host 헤더도 확인한다 (DNS 리바인딩 방지).
  * - 연결 코드(Bearer)가 맞아야 한다. 코드는 ~/.ad-agent-bridge.json 에 저장된다.
- * - 할 수 있는 일은 하나뿐: 받은 프롬프트와 JSON 스키마로 `claude -p` 를 실행해 구조화된 결과를 돌려준다.
+ * - 할 수 있는 일은 하나뿐: 받은 프롬프트(와 검수용 이미지)와 JSON 스키마로 `claude -p` 를 실행해 구조화된 결과를 돌려준다.
  *   도구는 모두 끈 상태(--tools "")로 실행하고, 임의 명령은 실행하지 않는다.
  * - 프롬프트와 결과는 기록하지 않는다. 요청 시각, 경로, 상태 코드만 화면에 찍는다.
  */
@@ -26,7 +26,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const DEFAULT_ORIGINS = [
   "https://samcho93.github.io",
   "http://localhost:5173",
@@ -34,7 +34,10 @@ const DEFAULT_ORIGINS = [
   "http://localhost:4173",
   "http://127.0.0.1:4173",
 ];
-const MAX_BODY = 4 * 1024 * 1024;
+const MAX_BODY = 48 * 1024 * 1024; // 검수용 이미지 포함
+const MAX_IMAGES = 12;
+const MAX_IMAGE_B64 = 8 * 1024 * 1024;
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_CONCURRENT = 2;
 const TIMEOUT_MS = 10 * 60 * 1000;
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
@@ -115,14 +118,16 @@ if (CLAUDE) {
 
 /* ---------------- 생성 ---------------- */
 
-function runClaude({ system, user, jsonSchema, model, effort }) {
+function runClaude({ system, user, jsonSchema, model, effort, images }) {
+  const withImages = Array.isArray(images) && images.length > 0;
   return new Promise((resolve, reject) => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "ad-agent-bridge-"));
     const sysFile = path.join(work, "system.md");
     fs.writeFileSync(sysFile, system, "utf8");
     const args = [
       "-p",
-      "--output-format", "json",
+      // 이미지가 있으면 stream-json 으로 이미지 블록을 함께 넘긴다 (마지막 줄이 result 이벤트)
+      ...(withImages ? ["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"] : ["--output-format", "json"]),
       "--json-schema", JSON.stringify(jsonSchema),
       "--system-prompt-file", sysFile,
       "--tools", "",
@@ -153,7 +158,9 @@ function runClaude({ system, user, jsonSchema, model, effort }) {
       cleanup();
       let out;
       try {
-        out = JSON.parse(stdout.trim().split(/\r?\n/).pop() ?? "");
+        const lines = stdout.trim().split(/\r?\n/);
+        const last = withImages ? [...lines].reverse().find((l) => l.includes('"type":"result"')) : lines.pop();
+        out = JSON.parse(last ?? "");
       } catch {
         return reject(new Error(`claude CLI 출력을 읽지 못했습니다 (종료 코드 ${code}): ${(stderr || stdout).slice(0, 300)}`));
       }
@@ -171,9 +178,19 @@ function runClaude({ system, user, jsonSchema, model, effort }) {
           output_tokens: u.output_tokens ?? 0,
         },
         cost_usd: out.total_cost_usd,
+        images_seen: withImages ? images.length : 0,
       });
     });
-    child.stdin.end(user, "utf8");
+    if (withImages) {
+      const content = [
+        ...images.flatMap((im) => [
+          { type: "text", text: im.label },
+          { type: "image", source: { type: "base64", media_type: im.mime, data: im.base64 } },
+        ]),
+        { type: "text", text: user },
+      ];
+      child.stdin.end(JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n", "utf8");
+    } else child.stdin.end(user, "utf8");
   });
 }
 
@@ -184,6 +201,14 @@ function validateGenerate(b) {
   if (!b.jsonSchema || typeof b.jsonSchema !== "object" || Array.isArray(b.jsonSchema)) return "jsonSchema 가 없습니다";
   if (typeof b.model !== "string" || !MODEL_RE.test(b.model)) return "model 형식이 올바르지 않습니다";
   if (!EFFORTS.has(b.effort)) return "effort 값이 올바르지 않습니다";
+  if (b.images !== undefined) {
+    if (!Array.isArray(b.images) || b.images.length > MAX_IMAGES) return `images 는 ${MAX_IMAGES}개 이하 배열이어야 합니다`;
+    for (const im of b.images) {
+      if (!im || typeof im.label !== "string" || im.label.length > 1000) return "이미지 label 이 올바르지 않습니다";
+      if (!IMAGE_MIMES.has(im.mime)) return "이미지 형식은 png, jpeg, webp 만 됩니다";
+      if (typeof im.base64 !== "string" || im.base64.length > MAX_IMAGE_B64 || !/^[A-Za-z0-9+/]+=*$/.test(im.base64)) return "이미지 데이터가 올바르지 않습니다";
+    }
+  }
   return null;
 }
 
@@ -255,7 +280,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && req.url === "/v1/health") {
-      send(res, 200, { ok: true, version: VERSION, claude: CLAUDE ? `claude ${claudeVersion}` : "claude CLI 없음" }, allowedOrigin);
+      send(res, 200, { ok: true, version: VERSION, features: ["images"], claude: CLAUDE ? `claude ${claudeVersion}` : "claude CLI 없음" }, allowedOrigin);
       return log(req, 200, started);
     }
     if (req.method === "POST" && req.url === "/v1/generate") {

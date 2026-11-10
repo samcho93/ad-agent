@@ -21,6 +21,8 @@ export interface Settings {
     bridgeUrl: string;
   };
   revision: { includedCount: string | number; includedCountRange: string };
+  /** 매체별 파일 용량 한도(KB). 근거가 없어 기본은 "확인 필요" (숫자를 넣으면 검수에서 비교) */
+  qa: { maxFileKB: string | number };
   pricing: string;
   privacyRetention: string;
   imageModel: string;
@@ -40,6 +42,7 @@ export interface Secrets {
 export const DEFAULT_SETTINGS: Settings = {
   llm: { ...(defaults.llm as Settings["llm"]), models: { ...(defaults.llm.models as Settings["llm"]["models"]) } },
   revision: defaults.revision,
+  qa: defaults.qa,
   pricing: defaults.pricing,
   privacyRetention: defaults.privacyRetention,
   imageModel: defaults.imageModel,
@@ -62,6 +65,7 @@ export function mergeSettings(saved: Partial<Settings> | null | undefined): Sett
     ...saved,
     llm: { ...DEFAULT_SETTINGS.llm, ...llmRest, models },
     revision: { ...DEFAULT_SETTINGS.revision, ...(saved.revision ?? {}) },
+    qa: { ...DEFAULT_SETTINGS.qa, ...(saved.qa ?? {}) },
   };
 }
 

@@ -261,6 +261,19 @@ export function SettingsPage() {
       <div className="card small stack">
         <h3>미정 항목 (운영 결정 전)</h3>
         <div>수정 포함 횟수: {String(settings.revision.includedCount)} ({settings.revision.includedCountRange}) · 가격: {settings.pricing} · 개인정보 보관: {settings.privacyRetention} · 이미지 모델: {settings.imageModel}</div>
+        <label className="row">
+          매체별 파일 용량 한도 (KB)
+          <input
+            type="text"
+            style={{ width: 120 }}
+            value={String(draft.qa.maxFileKB)}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              setDraft((d) => ({ ...d, qa: { maxFileKB: /^\d+(\.\d+)?$/.test(v) && Number(v) > 0 ? Number(v) : v || "확인 필요" } }));
+            }}
+          />
+          <span className="muted">매체 규정을 확인한 숫자만 넣으세요. 비워 두면 "확인 필요"로 두고 검수에서 용량만 보여 줍니다.</span>
+        </label>
       </div>
 
       {msg && <p className={`card ${msg.kind === "err" ? "err" : "okc"}`}>{msg.text}</p>}

@@ -5,12 +5,14 @@ import adBrief from "../../.claude/skills/ad-brief/SKILL.md?raw";
 import adIdeation from "../../.claude/skills/ad-ideation/SKILL.md?raw";
 import adIntake from "../../.claude/skills/ad-intake/SKILL.md?raw";
 import adImageRouter from "../../.claude/skills/ad-image-router/SKILL.md?raw";
+import adQa from "../../.claude/skills/ad-qa/SKILL.md?raw";
 
 const SKILLS: Record<string, string> = {
   "ad-brief": adBrief,
   "ad-ideation": adIdeation,
   "ad-intake": adIntake,
   "ad-image-router": adImageRouter,
+  "ad-qa": adQa,
 };
 
 export function readSkill(name: keyof typeof SKILLS | string): string {

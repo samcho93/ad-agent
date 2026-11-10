@@ -16,6 +16,9 @@
     "includedCount": "미정",
     "includedCountRange": "1~3회"
   },
+  "qa": {
+    "maxFileKB": "확인 필요"
+  },
   "pricing": "미정",
   "privacyRetention": "미정 (납품 후 ○년)",
   "imageModel": "미정",

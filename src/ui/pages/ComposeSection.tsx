@@ -4,6 +4,7 @@ import { SIZES, SIZE_LABEL, type ComposeDoc, type CopySpace, type Corner, type S
 import type { Issue } from "@/core/validate";
 import { loadFonts } from "@/render/fonts";
 import { blobToImage, canvasToPng, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
+import { reached, type CaseStatus } from "@/core/caseService";
 import { errMsg, useApp } from "../app";
 
 const VARIANTS: Variant[] = ["A", "B"];
@@ -53,7 +54,7 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
 
   // 저장된 PNG 미리보기·내려받기 주소
   useEffect(() => {
-    if (status !== "compose_done") return setSaved({});
+    if (!reached(status as CaseStatus, "compose_done")) return setSaved({});
     let alive = true;
     const made: string[] = [];
     (async () => {
@@ -140,9 +141,11 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
     });
 
   const sizeLabel = (c: RenderCheck) => `${c.variant} · ${SIZE_LABEL[c.size]}`;
+  const locked = reached(status as CaseStatus, "gate2_approved");
 
   return (
     <div className="stack">
+      {locked && <p className="small muted" style={{ margin: 0 }}>게이트 2를 통과해 잠겼습니다. 바꾸려면 아래 납품 단계에서 수정 요청을 기록하세요.</p>}
       <div className="row small">
         {SIZES.map((s) => (
           <button key={s} className={size === s ? "primary" : ""} onClick={() => setSize(s)}>{SIZE_LABEL[s]}</button>
@@ -162,6 +165,7 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
         ))}
       </div>
 
+      <fieldset disabled={locked} className="plain stack">
       <div className="ideas">
         {VARIANTS.map((v) => {
           const c = doc.variants[v];
@@ -237,8 +241,9 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
         )}
         {err && <p className="err" style={{ margin: 0 }}>⚠ {err}</p>}
       </div>
+      </fieldset>
 
-      {status === "compose_done" && Object.keys(saved).length > 0 && (
+      {reached(status as CaseStatus, "compose_done") && Object.keys(saved).length > 0 && (
         <div className="card stack small">
           <b>저장된 시안 (05_compose/)</b>
           <div className="row" style={{ alignItems: "flex-start" }}>

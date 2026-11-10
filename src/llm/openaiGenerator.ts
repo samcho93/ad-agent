@@ -37,7 +37,20 @@ export function createOpenAIGenerator(opts: OpenAIOptions): Generator {
       res = await client.responses.create({
         model: opts.model,
         instructions: req.system,
-        input: req.user,
+        input: req.images?.length
+          ? [
+              {
+                role: "user",
+                content: [
+                  ...req.images.flatMap((im) => [
+                    { type: "input_text" as const, text: im.label },
+                    { type: "input_image" as const, image_url: `data:${im.mime};base64,${im.base64}`, detail: "high" as const },
+                  ]),
+                  { type: "input_text" as const, text: req.user },
+                ],
+              },
+            ]
+          : req.user,
         max_output_tokens: opts.maxTokens,
         ...(isReasoningModel(opts.model) ? { reasoning: { effort: opts.effort } } : {}),
         text: { format: { type: "json_schema", name: req.purpose, schema: toStrictJsonSchema(req.schema), strict: true } },

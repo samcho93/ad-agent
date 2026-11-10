@@ -7,6 +7,7 @@ import IntakePage from "./ui/pages/Intake";
 import { Cases } from "./ui/pages/Cases";
 import CasePage from "./ui/pages/CaseDetail";
 import { SettingsPage } from "./ui/pages/Settings";
+import { ProofPage } from "./ui/pages/ProofPage";
 import { PROVIDER_LABEL } from "./llm/select";
 import { currentModel } from "./core/settings";
 
@@ -63,11 +64,14 @@ function Router() {
     case "settings":
       page = <SettingsPage />;
       break;
+    case "proof":
+      page = <ProofPage />;
+      break;
     default:
       page = <Home />;
   }
-  // 광고주가 질문지만 쓰는 화면에는 내부 메뉴를 보이지 않는다
-  const advertiserView = route[0] === "intake" && new URLSearchParams(location.hash.split("?")[1] ?? "").get("mode") === "client";
+  // 광고주가 쓰는 화면(질문지 광고주 모드, 시안 확인)에는 내부 메뉴를 보이지 않는다
+  const advertiserView = route[0] === "proof" || (route[0] === "intake" && new URLSearchParams(location.hash.split("?")[1] ?? "").get("mode") === "client");
   return (
     <>
       {!advertiserView && <Nav route={route} />}

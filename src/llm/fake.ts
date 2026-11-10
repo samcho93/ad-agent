@@ -105,7 +105,24 @@ export function goodImagePrompt() {
   };
 }
 
+/** 이미지 검수 응답. textOn 에 적은 파일에는 "AI 글자"가 있다고 답한다 */
+export function goodQa(textOn: string[] = []) {
+  const files = ["A", "B"].flatMap((v) => ["1080x1080", "1200x628", "320x100"].map((s) => `${v}_${s}.png`));
+  return {
+    images: files.map((file) => ({
+      file,
+      generatedTextOrLogo: textOn.includes(file)
+        ? { found: true, evidence: "왼쪽 아래 선반의 병 라벨에 알아볼 수 없는 영문 글자" }
+        : { found: false, evidence: "배경·소품에 글자나 로고 없음" },
+      copyReadable: { ok: true, evidence: "문구가 배경과 잘 구분됨" },
+      productMatch: { status: "같음" as const, evidence: "쿠키 모양과 색이 원본과 같음" },
+      reviewRisk: { found: false, evidence: "과장·보장 표현 없음" },
+    })),
+    overall: textOn.length ? "일부 시안 배경에 AI가 만든 글자가 있습니다" : "큰 문제 없음",
+  };
+}
+
 /** 가짜 모드(npm run dev:fake) 화면 시험용 */
 export function devFakeGenerator(): Generator {
-  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()] });
+  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()], qa: [goodQa(["B_1200x628.png"])] });
 }

@@ -42,7 +42,14 @@ export function createGeminiGenerator(opts: GeminiOptions): Generator {
       const thinking = thinkingFor(opts.model, opts.effort);
       res = await ai.models.generateContent({
         model: opts.model,
-        contents: req.user,
+        contents: req.images?.length
+          ? [
+              {
+                role: "user",
+                parts: [...req.images.flatMap((im) => [{ text: im.label }, { inlineData: { mimeType: im.mime, data: im.base64 } }]), { text: req.user }],
+              },
+            ]
+          : req.user,
         config: {
           systemInstruction: req.system,
           responseMimeType: "application/json",

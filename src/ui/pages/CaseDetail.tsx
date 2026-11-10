@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import type { CaseMeta, CaseService, Gate1Readiness } from "@/core/caseService";
+import { reached, type CaseMeta, type CaseService, type Gate1Readiness } from "@/core/caseService";
 import type { BriefDoc } from "@/core/brief";
 import type { IdeasDoc } from "@/core/ideas";
 import { unresolved } from "@/core/brief";
@@ -10,6 +10,8 @@ import { currentModel } from "@/core/settings";
 import { downloadJson, errMsg, go, href, useApp } from "../app";
 import { ImagesSection } from "./ImagesSection";
 import { ComposeSection } from "./ComposeSection";
+import { QaSection } from "./QaSection";
+import { DeliverySection } from "./DeliverySection";
 import type { Tag } from "@/core/tags";
 import { renderTag } from "@/core/tags";
 import type { BriefRow } from "@/core/brief";
@@ -56,6 +58,9 @@ async function loadState(svc: CaseService, id: string): Promise<CaseState> {
 }
 
 function stageIndex(s: CaseState): number {
+  if (s.meta.status === "delivered") return 9;
+  if (s.meta.status === "gate2_approved" || s.meta.status === "client_selected") return 8;
+  if (s.meta.status === "qa_done") return 7;
   if (s.meta.status === "compose_done") return 6;
   if (s.meta.status === "images_selected") return 5;
   if (s.meta.status === "gate1_approved") return 4;
@@ -63,6 +68,17 @@ function stageIndex(s: CaseState): number {
   if (s.brief) return 2;
   return 1;
 }
+
+/** 아래 막대에 보여 줄 다음 할 일 */
+const NEXT_STEP: Partial<Record<CaseMeta["status"], { text: string; target?: string; link?: string }>> = {
+  gate1_approved: { text: "게이트 1 승인 완료 — 이미지 단계를 진행하세요", target: "images", link: "이미지로 이동" },
+  images_selected: { text: "이미지 확정 완료 — 합성 단계를 진행하세요", target: "compose", link: "합성으로 이동" },
+  compose_done: { text: "합성 완료 — 검수를 실행하세요", target: "qa", link: "검수로 이동" },
+  qa_done: { text: "검수 완료 — 게이트 2(디자이너 최종 검수)를 진행하세요", target: "qa", link: "게이트 2로 이동" },
+  gate2_approved: { text: "게이트 2 통과 — 광고주에게 시안 확인 파일을 보내세요", target: "delivery", link: "광고주 확인으로 이동" },
+  client_selected: { text: "광고주 확정 — 납품 ZIP을 내려받으세요 (심의 업종은 완성본 심의 먼저)", target: "delivery", link: "납품으로 이동" },
+  delivered: { text: "납품 완료" , target: "delivery", link: "납품 기록 보기" },
+};
 
 function TagChips({ tags }: { tags: Tag[] }) {
   return (
@@ -122,7 +138,7 @@ export default function CasePage({ id }: { id: string }) {
   if (!s) return <main className="wrap">{err ? <p className="err">{err}</p> : <p className="muted">불러오는 중…</p>}</main>;
 
   // 게이트 1 승인 뒤에는 브리프·아이디어가 잠긴다
-  const locked = s.meta.status === "gate1_approved" || s.meta.status === "images_selected" || s.meta.status === "compose_done";
+  const locked = reached(s.meta.status, "gate1_approved");
   const now = stageIndex(s);
   const brief = s.brief;
   const ideas = s.ideas;
@@ -240,10 +256,24 @@ export default function CasePage({ id }: { id: string }) {
           )}
 
           <h2 id="compose">합성 (MVP 2단계)</h2>
-          {s.meta.status === "images_selected" || s.meta.status === "compose_done" ? (
+          {reached(s.meta.status, "images_selected") ? (
             <ComposeSection caseId={id} name={name} status={s.meta.status} onChanged={() => run("load", async () => {})} />
           ) : (
             <p className="small muted">이미지를 확정하면 합성 단계가 열립니다.</p>
+          )}
+
+          <h2 id="qa">검수 · 게이트 2 (MVP 4단계)</h2>
+          {reached(s.meta.status, "compose_done") ? (
+            <QaSection caseId={id} name={name} status={s.meta.status} onChanged={() => run("load", async () => {})} />
+          ) : (
+            <p className="small muted">합성에서 PNG를 저장하면 검수 단계가 열립니다.</p>
+          )}
+
+          <h2 id="delivery">광고주 확인 · 납품</h2>
+          {reached(s.meta.status, "gate1_approved") ? (
+            <DeliverySection caseId={id} company={s.meta.company} name={name} status={s.meta.status} onChanged={() => run("load", async () => {})} />
+          ) : (
+            <p className="small muted">게이트 2를 통과하면 광고주에게 시안을 보낼 수 있습니다.</p>
           )}
 
           <h2>승인 기록</h2>
@@ -255,10 +285,16 @@ export default function CasePage({ id }: { id: string }) {
         <div className="inner">
           {locked ? (
             <span className="small okc">
-              <strong>{s.meta.status === "compose_done" ? "합성 완료 — 다음은 검수·게이트 2 (MVP 4단계, 구현 전)" : s.meta.status === "images_selected" ? "이미지 확정 완료 — 합성 단계를 진행하세요" : "게이트 1 승인 완료 — 이미지 단계를 진행하세요"}</strong>{" "}
               {(() => {
-                const target = s.meta.status === "gate1_approved" ? "images" : "compose";
-                return <a href={`#${target}`} onClick={(e) => { e.preventDefault(); document.getElementById(target)?.scrollIntoView({ behavior: "smooth" }); }}>{target === "images" ? "이미지로 이동" : "합성으로 이동"}</a>;
+                const next = NEXT_STEP[s.meta.status] ?? NEXT_STEP.gate1_approved!;
+                return (
+                  <>
+                    <strong>{next.text}</strong>{" "}
+                    {next.target && (
+                      <a href={`#${next.target}`} onClick={(e) => { e.preventDefault(); document.getElementById(next.target!)?.scrollIntoView({ behavior: "smooth" }); }}>{next.link}</a>
+                    )}
+                  </>
+                );
               })()}
             </span>
           ) : (
