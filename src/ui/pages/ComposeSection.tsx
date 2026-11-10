@@ -230,6 +230,11 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
             {busy === "render" ? "PNG 만드는 중…" : `PNG ${doc.shared.sizes.length * 2}장 저장 (합성 완료)`}
           </button>
         </div>
+        {errors.length > 0 && (
+          <p className="warn" style={{ margin: 0 }}>
+            위 ✗ 항목 {errors.length}개를 해결해야 PNG를 저장할 수 있습니다. 사이즈 탭을 바꿔 해당 시안을 확인하세요 (문구 잘림은 문구를 줄이면 풀립니다).
+          </p>
+        )}
         {err && <p className="err" style={{ margin: 0 }}>⚠ {err}</p>}
       </div>
 
