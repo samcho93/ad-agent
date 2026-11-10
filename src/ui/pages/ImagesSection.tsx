@@ -221,9 +221,10 @@ export function ImagesSection({ caseId, name, onName, onChanged }: { caseId: str
           </select>
         </label>
         <div className="row">
-          <input type="url" placeholder="Figma 프레임 링크 (프레임 선택 → 선택 항목 링크 복사)" value={figmaLink} onChange={(e) => setFigmaLink(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
+          <input type="url" placeholder="Figma 프레임 링크 (프레임 선택 → Ctrl+L 로 복사)" value={figmaLink} onChange={(e) => setFigmaLink(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
           <button
             disabled={!!busy || !figmaLink.trim()}
+            title="프레임 링크: Figma에서 프레임 선택 → Ctrl+L(Mac Cmd+L), 또는 우클릭 → Copy/Paste as → Copy link"
             onClick={() => {
               if (needName("import")) return;
               run("figma", async () => {

@@ -271,7 +271,8 @@ export function buildImagePrompt(out: ImagePromptModelOutput, idea: Idea, policy
 /* 4. Figma 링크                                                         */
 /* ------------------------------------------------------------------ */
 
-const COPY_LINK_HELP = "Figma에서 가져올 프레임을 클릭해 선택한 뒤 우클릭 → '선택 항목 링크 복사'(Copy link to selection)로 얻은 링크를 넣어 주세요";
+const COPY_LINK_HELP =
+  "프레임 링크를 얻는 방법: (1) Figma에서 프레임을 선택하고 Ctrl+L (Mac: Cmd+L), (2) 프레임 우클릭 → Copy/Paste as(복사/붙여넣기) → Copy link(링크 복사), (3) 브라우저 Figma라면 프레임을 선택한 뒤 주소창의 주소 복사 (node-id 가 들어 있어야 함). 메뉴 이름은 Figma 버전·언어에 따라 조금 다를 수 있습니다";
 
 /**
  * Figma 링크 → { fileKey, nodeId }
