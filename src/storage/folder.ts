@@ -1,4 +1,4 @@
-import { type CaseStore, CASE_ID_RE, assertFileName } from "./types";
+import { type CaseStore, CASE_ID_RE, SUBDIRS, assertFileName } from "./types";
 import { kv } from "./idb";
 
 /**
@@ -68,25 +68,58 @@ export class FolderStore implements CaseStore {
     const dir = await this.caseDir(caseId, false);
     const out: string[] = [];
     if (!dir) return out;
-    for await (const h of dir.values?.() ?? []) if (h.kind === "file") out.push(h.name);
+    for await (const h of dir.values?.() ?? []) {
+      if (h.kind === "file") out.push(h.name);
+      else if ((SUBDIRS as readonly string[]).includes(h.name)) {
+        for await (const f of (h as DirHandle).values?.() ?? []) if (f.kind === "file") out.push(`${h.name}/${f.name}`);
+      }
+    }
     return out;
   }
-  async read(caseId: string, name: string) {
-    const dir = await this.caseDir(caseId, false);
+  /** "04_images/a.png" → (04_images 폴더 핸들, "a.png") */
+  private async locate(caseId: string, name: string, create: boolean): Promise<[FileSystemDirectoryHandle, string] | null> {
+    const dir = await this.caseDir(caseId, create);
     if (!dir) return null;
+    const parts = name.split("/");
+    if (parts.length === 1) return [dir, name];
     try {
-      const f = await (await dir.getFileHandle(name)).getFile();
-      return await f.text();
+      return [await dir.getDirectoryHandle(parts[0], { create }), parts[1]];
     } catch {
       return null;
     }
   }
-  async write(caseId: string, name: string, content: string) {
+  private async file(caseId: string, name: string): Promise<File | null> {
+    const loc = await this.locate(caseId, name, false);
+    if (!loc) return null;
+    try {
+      return await (await loc[0].getFileHandle(loc[1])).getFile();
+    } catch {
+      return null;
+    }
+  }
+  async read(caseId: string, name: string) {
+    const f = await this.file(caseId, name);
+    return f ? await f.text() : null;
+  }
+  async readBlob(caseId: string, name: string) {
+    return this.file(caseId, name);
+  }
+  private async put(caseId: string, name: string, data: string | Blob) {
     assertFileName(name);
-    const dir = (await this.caseDir(caseId, true))!;
-    const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
-    await w.write(content);
+    const [dir, file] = (await this.locate(caseId, name, true))!;
+    const w = await (await dir.getFileHandle(file, { create: true })).createWritable();
+    await w.write(data);
     await w.close();
+  }
+  async write(caseId: string, name: string, content: string) {
+    await this.put(caseId, name, content);
+  }
+  async writeBlob(caseId: string, name: string, blob: Blob) {
+    await this.put(caseId, name, blob);
+  }
+  async removeFile(caseId: string, name: string) {
+    const loc = await this.locate(caseId, name, false);
+    if (loc) await loc[0].removeEntry(loc[1]).catch(() => {});
   }
   async append(caseId: string, name: string, content: string) {
     await this.write(caseId, name, ((await this.read(caseId, name)) ?? "") + content);

@@ -95,7 +95,17 @@ export function scriptedGenerator(script: Record<string, unknown[]>): Generator 
   return gen;
 }
 
-/** AD_AGENT_FAKE_LLM=1 일 때 화면 시험용 */
+export function goodImagePrompt() {
+  return {
+    promptEn:
+      "Warm early-morning light on a rustic wooden workbench, a cooling rack and a small dish of butter, scattered flour, soft shadows, shallow depth of field, cozy bakery mood, beige and brown tones",
+    promptKo: "이른 아침 햇살이 드는 나무 작업대, 식힘망과 버터 접시, 흩어진 밀가루, 부드러운 그림자, 따뜻한 베이지·갈색 톤",
+    copySpace: "위" as const,
+    aspect: "1:1" as const,
+  };
+}
+
+/** 가짜 모드(npm run dev:fake) 화면 시험용 */
 export function devFakeGenerator(): Generator {
-  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()] });
+  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()] });
 }

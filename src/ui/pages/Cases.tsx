@@ -6,7 +6,8 @@ const STATUS: Record<string, string> = {
   intake_done: "질문 수집 완료",
   brief_draft: "브리프 초안",
   ideas_draft: "아이디어 초안",
-  gate1_approved: "게이트 1 승인",
+  gate1_approved: "게이트 1 승인 · 이미지 단계",
+  images_selected: "이미지 확정",
 };
 
 export function Cases() {

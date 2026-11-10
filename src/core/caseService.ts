@@ -1,5 +1,5 @@
 import type { CaseStore } from "@/storage/types";
-import { CASE_ID_RE, FILE_NAME_RE } from "@/storage/types";
+import { CASE_ID_RE, isValidFileName } from "@/storage/types";
 import { IntakeSchema, type Intake } from "./intake";
 import { type BriefDoc, buildChecklist, renderBriefMarkdown, unresolved, OBJECTIVE_CATEGORIES } from "./brief";
 import { type IdeasDoc, renderIdeasMarkdown } from "./ideas";
@@ -18,7 +18,7 @@ export const STAGES = [
   { key: "export", label: "납품" },
 ] as const;
 
-export type CaseStatus = "intake_done" | "brief_draft" | "ideas_draft" | "gate1_approved";
+export type CaseStatus = "intake_done" | "brief_draft" | "ideas_draft" | "gate1_approved" | "images_selected";
 
 export interface CaseMeta {
   id: string;
@@ -45,6 +45,21 @@ export interface CaseBundle {
   exportedAt: string;
   caseId: string;
   files: Record<string, string>;
+  /** 이미지 등 바이너리 파일 (base64) */
+  binaries?: Record<string, { type: string; base64: string }>;
+}
+
+const BINARY_RE = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
+export const isBinaryName = (name: string) => BINARY_RE.test(name);
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function base64ToBlob(b64: string, type: string): Blob {
+  return new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type });
 }
 
 function slug(company: string): string {
@@ -135,7 +150,20 @@ export class CaseService {
   }
 
   private assertNotLocked(meta: CaseMeta) {
-    if (meta.status === "gate1_approved") throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
+    if (meta.status === "gate1_approved" || meta.status === "images_selected") throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
+  }
+
+  /** 단계 상태만 바꾼다 (이미지 단계 등에서 사용) */
+  async setStatus(id: string, status: CaseStatus) {
+    const meta = await this.getMeta(id);
+    meta.status = status;
+    await this.saveMeta(meta);
+  }
+
+  /** approvals.md 에 한 줄 남긴다 */
+  async recordApproval(id: string, gate: string, by: string, what: string) {
+    const clean = (v: string) => v.trim().replace(/\|/g, "/").replace(/\r?\n/g, " ");
+    await this.store.append(id, "approvals.md", `| ${new Date().toISOString()} | ${clean(gate)} | ${clean(by)} | ${clean(what)} |\n`);
   }
 
   async assertEditable(id: string) {
@@ -251,11 +279,17 @@ export class CaseService {
   async exportCase(id: string): Promise<CaseBundle> {
     await this.getMeta(id);
     const files: Record<string, string> = {};
+    const binaries: Record<string, { type: string; base64: string }> = {};
     for (const name of await this.store.listFiles(id)) {
-      const c = await this.store.read(id, name);
-      if (c !== null) files[name] = c;
+      if (isBinaryName(name)) {
+        const b = await this.store.readBlob(id, name);
+        if (b) binaries[name] = { type: b.type || "application/octet-stream", base64: await blobToBase64(b) };
+      } else {
+        const c = await this.store.read(id, name);
+        if (c !== null) files[name] = c;
+      }
     }
-    return { format: "ad-agent-case", version: 1, exportedAt: new Date().toISOString(), caseId: id, files };
+    return { format: "ad-agent-case", version: 1, exportedAt: new Date().toISOString(), caseId: id, files, binaries };
   }
 
   /** 받은 케이스 파일을 가져온다. 같은 id가 있으면 새 id를 붙인다 */
@@ -266,7 +300,13 @@ export class CaseService {
     }
     const files = b.files as Record<string, unknown>;
     for (const [name, content] of Object.entries(files)) {
-      if (!FILE_NAME_RE.test(name) || name.startsWith(".") || typeof content !== "string") throw new CaseError(`잘못된 파일: ${name}`);
+      if (!isValidFileName(name) || typeof content !== "string") throw new CaseError(`잘못된 파일: ${name}`);
+    }
+    const binaries = (b.binaries ?? {}) as Record<string, { type?: unknown; base64?: unknown }>;
+    for (const [name, v] of Object.entries(binaries)) {
+      if (!isValidFileName(name) || !isBinaryName(name) || typeof v?.base64 !== "string" || typeof v?.type !== "string" || !/^image\//.test(v.type)) {
+        throw new CaseError(`잘못된 파일: ${name}`);
+      }
     }
     if (typeof files["00_case.json"] !== "string" || typeof files["01_intake.json"] !== "string") throw new CaseError("필수 파일(00_case.json, 01_intake.json)이 없습니다");
     const meta = JSON.parse(files["00_case.json"] as string) as CaseMeta;
@@ -274,6 +314,7 @@ export class CaseService {
     const id = await this.freeId(CASE_ID_RE.test(meta.id) ? meta.id : `${slug(meta.company ?? "case")}_${ymd()}`);
     meta.id = id;
     for (const [name, content] of Object.entries(files)) if (name !== "00_case.json") await this.store.write(id, name, content as string);
+    for (const [name, v] of Object.entries(binaries)) await this.store.writeBlob(id, name, base64ToBlob(v.base64 as string, v.type as string));
     await this.store.write(id, "00_case.json", json(meta));
     return meta;
   }

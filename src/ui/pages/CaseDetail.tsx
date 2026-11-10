@@ -8,6 +8,7 @@ import { generateBrief, generateIdeas } from "@/llm/pipeline";
 import { PROVIDER_LABEL } from "@/llm/select";
 import { currentModel } from "@/core/settings";
 import { downloadJson, errMsg, go, href, useApp } from "../app";
+import { ImagesSection } from "./ImagesSection";
 import type { Tag } from "@/core/tags";
 import { renderTag } from "@/core/tags";
 import type { BriefRow } from "@/core/brief";
@@ -54,6 +55,7 @@ async function loadState(svc: CaseService, id: string): Promise<CaseState> {
 }
 
 function stageIndex(s: CaseState): number {
+  if (s.meta.status === "images_selected") return 5;
   if (s.meta.status === "gate1_approved") return 4;
   if (s.ideas) return 3;
   if (s.brief) return 2;
@@ -117,7 +119,8 @@ export default function CasePage({ id }: { id: string }) {
 
   if (!s) return <main className="wrap">{err ? <p className="err">{err}</p> : <p className="muted">불러오는 중…</p>}</main>;
 
-  const locked = s.meta.status === "gate1_approved";
+  // 게이트 1 승인 뒤에는 브리프·아이디어가 잠긴다
+  const locked = s.meta.status === "gate1_approved" || s.meta.status === "images_selected";
   const now = stageIndex(s);
   const brief = s.brief;
   const ideas = s.ideas;
@@ -227,6 +230,13 @@ export default function CasePage({ id }: { id: string }) {
             </>
           )}
 
+          <h2 id="images">이미지 (MVP 3단계)</h2>
+          {locked ? (
+            <ImagesSection caseId={id} name={name} onChanged={() => run("load", async () => {})} />
+          ) : (
+            <p className="small muted">게이트 1을 승인하면 이미지 단계가 열립니다.</p>
+          )}
+
           <h2>승인 기록</h2>
           <pre className="card small" style={{ whiteSpace: "pre-wrap" }}>{s.approvals}</pre>
         </section>
@@ -235,7 +245,10 @@ export default function CasePage({ id }: { id: string }) {
       <div className="bottombar">
         <div className="inner">
           {locked ? (
-            <strong className="small okc">게이트 1 승인 완료 — 다음 단계(이미지)는 MVP 3단계에서 구현</strong>
+            <span className="small okc">
+              <strong>{s.meta.status === "images_selected" ? "이미지 확정 완료 — 다음은 합성(MVP 2단계, 아직 구현 전)" : "게이트 1 승인 완료 — 이미지 단계를 진행하세요"}</strong>{" "}
+              <a href="#images" onClick={(e) => { e.preventDefault(); document.getElementById("images")?.scrollIntoView({ behavior: "smooth" }); }}>이미지로 이동</a>
+            </span>
           ) : (
             <>
               <Gate1Checks

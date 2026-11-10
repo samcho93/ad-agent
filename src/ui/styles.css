@@ -82,3 +82,5 @@ label.field > span { display: block; color: var(--muted); margin-bottom: 4px; }
 select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
 input[type=password], input[type=url] { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
 code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--tag-ai); padding: 1px 5px; border-radius: 4px; }
+.ideas > * { min-width: 0; }
+.ideas img { max-width: 100%; }

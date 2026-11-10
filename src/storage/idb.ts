@@ -51,7 +51,7 @@ export class IdbStore implements CaseStore {
     return (await tx("files", "readonly", (s) => s.getAllKeys())).map(String);
   }
   async listCaseIds() {
-    return [...new Set((await this.allKeys()).map((k) => k.split("/")[0]))];
+    return [...new Set((await this.allKeys()).map((k) => k.slice(0, k.indexOf("/"))))];
   }
   async caseExists(caseId: string) {
     return (await this.read(caseId, "00_case.json")) !== null;
@@ -60,9 +60,25 @@ export class IdbStore implements CaseStore {
     const prefix = `${caseId}/`;
     return (await this.allKeys()).filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
   }
+  private get(caseId: string, name: string) {
+    return tx<string | Blob | undefined>("files", "readonly", (s) => s.get(fileKey(caseId, name)) as IDBRequest<string | Blob | undefined>);
+  }
   async read(caseId: string, name: string) {
-    const v = await tx<string | undefined>("files", "readonly", (s) => s.get(fileKey(caseId, name)) as IDBRequest<string | undefined>);
-    return v ?? null;
+    const v = await this.get(caseId, name);
+    if (v === undefined) return null;
+    return typeof v === "string" ? v : await v.text();
+  }
+  async readBlob(caseId: string, name: string) {
+    const v = await this.get(caseId, name);
+    if (v === undefined) return null;
+    return typeof v === "string" ? new Blob([v]) : v;
+  }
+  async writeBlob(caseId: string, name: string, blob: Blob) {
+    assertFileName(name);
+    await tx("files", "readwrite", (s) => s.put(blob, fileKey(caseId, name)));
+  }
+  async removeFile(caseId: string, name: string) {
+    await tx("files", "readwrite", (s) => s.delete(fileKey(caseId, name)));
   }
   async write(caseId: string, name: string, content: string) {
     assertFileName(name);
