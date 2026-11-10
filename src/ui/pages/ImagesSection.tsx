@@ -50,13 +50,30 @@ const CHECKER: React.CSSProperties = {
   backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
 };
 
-export function ImagesSection({ caseId, name, onChanged }: { caseId: string; name: string; onChanged: () => void }) {
+/** 어떤 버튼에서 난 오류인지: 오류는 누른 버튼 바로 아래에 보여 준다 */
+type Area = "top" | "asset" | "prompt" | "import" | "cutout" | "gallery" | "complete";
+function areaOf(label: string): Area {
+  if (label === "asset" || label === "rm") return "asset";
+  if (label === "prompt") return "prompt";
+  if (label === "figma" || label === "upload" || label === "paste") return "import";
+  if (label.startsWith("cut:")) return "cutout";
+  if (label.startsWith("item:")) return "gallery";
+  if (label === "complete") return "complete";
+  return "top";
+}
+
+export function ImagesSection({ caseId, name, onName, onChanged }: { caseId: string; name: string; onName: (v: string) => void; onChanged: () => void }) {
   const { svc, generator, secrets } = useApp();
   const images = useMemo(() => new ImageService(svc), [svc]);
   const [doc, setDoc] = useState<ImagesDoc | null>(null);
   const [ready, setReady] = useState<{ ok: boolean; blockers: string[] }>({ ok: false, blockers: [] });
   const [busy, setBusy] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErrText] = useState("");
+  const [errArea, setErrArea] = useState<Area>("top");
+  const setErr = (text: string, area: Area = "top") => {
+    setErrText(text);
+    setErrArea(area);
+  };
   const [progress, setProgress] = useState("");
   const [assetKind, setAssetKind] = useState<AssetKind>("product");
   const [figmaLink, setFigmaLink] = useState("");
@@ -81,7 +98,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
     try {
       await work();
     } catch (e) {
-      setErr(errMsg(e));
+      setErr(errMsg(e), areaOf(label));
     } finally {
       setProgress("");
       await reload().catch(() => {});
@@ -89,13 +106,15 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
       setBusy("");
     }
   };
-  const needName = () => {
+  const needName = (area: Area) => {
     if (!name.trim()) {
-      setErr("화면 위쪽(또는 아래 승인 칸)의 이름을 먼저 적어 주세요. 이미지 기록에 남습니다");
+      setErr("이미지 단계 맨 위 '작업자 이름' 칸에 이름을 먼저 적어 주세요. 이미지 기록에 남습니다", area);
       return true;
     }
     return false;
   };
+  /** 해당 영역의 오류 (누른 버튼 바로 아래) */
+  const AreaErr = ({ area }: { area: Area }) => (err && errArea === area ? <p className="err" data-err-area={area} style={{ margin: 0 }}>⚠ {err}</p> : null);
 
   const files = useMemo(() => [...(doc?.assets.map((a) => a.file) ?? []), ...(doc?.items.map((i) => i.file) ?? [])], [doc]);
   const urls = useBlobUrls(caseId, files);
@@ -109,7 +128,11 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
 
   return (
     <div className="stack">
-      {err && <p className="err card">{err}</p>}
+      <div className="row small">
+        <label className="row">작업자 이름 <input type="text" style={{ width: 160 }} value={name} onChange={(e) => onName(e.target.value)} placeholder="이미지 기록에 남습니다" /></label>
+        {!name.trim() && <span className="warn">이름을 적어야 이미지를 올리고 고를 수 있습니다</span>}
+      </div>
+      <AreaErr area="top" />
 
       {/* 1. 자료 */}
       <div className="card stack">
@@ -121,7 +144,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           <button
             disabled={!!busy}
             onClick={async () => {
-              if (needName()) return;
+              if (needName("asset")) return;
               const fs = await pickFiles(assetKind === "logo" ? `${IMAGE_TYPES},image/svg+xml` : IMAGE_TYPES, true);
               if (fs.length) run("asset", async () => { for (const f of fs) await images.addAsset(caseId, f, f.name, assetKind, name); });
             }}
@@ -130,6 +153,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           </button>
           <span className="small muted">이 PC(선택한 저장 위치)에만 저장됩니다.</span>
         </div>
+        <AreaErr area="asset" />
         {doc.assets.length === 0 ? <p className="small muted">아직 올린 자료가 없습니다.</p> : (
           <div className="row" style={{ alignItems: "flex-start" }}>
             {doc.assets.map((a) => (
@@ -172,6 +196,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
             {busy === "prompt" ? "프롬프트 만드는 중…" : latestPrompt ? "프롬프트 다시 만들기" : "프롬프트 만들기"}
           </button>
         </div>
+        <AreaErr area="prompt" />
         {latestPrompt && (
           <div className="stack">
             <div className="muted">{latestPrompt.id} · {latestPrompt.model} · 비율 {latestPrompt.aspect} · 빈 공간 {latestPrompt.copySpace}</div>
@@ -200,7 +225,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           <button
             disabled={!!busy || !figmaLink.trim()}
             onClick={() => {
-              if (needName()) return;
+              if (needName("import")) return;
               run("figma", async () => {
                 const r = await fetchFigmaFramePng(secrets.figmaToken ?? "", figmaLink);
                 await images.addImage(caseId, r.blob, { source: "figma", role: "scene", tool: "Figma (REST 렌더링)", promptId: promptForImport || undefined, figma: { fileKey: r.fileKey, nodeId: r.nodeId } }, name);
@@ -216,7 +241,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           <button
             disabled={!!busy || !uploadTool.trim()}
             onClick={async () => {
-              if (needName()) return;
+              if (needName("import")) return;
               const fs = await pickFiles(IMAGE_TYPES, true);
               if (fs.length) run("upload", async () => { for (const f of fs) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: uploadTool.trim(), promptId: promptForImport || undefined }, name); });
             }}
@@ -236,8 +261,8 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           onPaste={(e) => {
             e.preventDefault();
             const files = [...e.clipboardData.items].filter((it) => it.kind === "file" && it.type.startsWith("image/")).map((it) => it.getAsFile()).filter((f): f is File => !!f);
-            if (!files.length) return setErr("붙여 넣은 내용에 이미지가 없습니다. Figma에서 프레임을 고르고 Ctrl+Shift+C(PNG로 복사) 했는지 확인하세요");
-            if (needName() || !pasteTool.trim()) return;
+            if (!files.length) return setErr("붙여 넣은 내용에 이미지가 없습니다. Figma에서 프레임을 고르고 Ctrl+Shift+C(PNG로 복사) 했는지 확인하세요", "import");
+            if (needName("import") || !pasteTool.trim()) return;
             run("paste", async () => { for (const f of files) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: pasteTool.trim(), promptId: promptForImport || undefined }, name); });
           }}
         >
@@ -248,6 +273,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
             </>
           )}
         </div>
+        <AreaErr area="import" />
         <p className="muted">가져온 이미지는 바로 저장되고, 도구·프롬프트·날짜가 기록됩니다.</p>
       </div>
 
@@ -266,7 +292,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
                 <button
                   disabled={!!busy}
                   onClick={() => {
-                    if (needName()) return;
+                    if (needName("cutout")) return;
                     run(`cut:${a.id}`, async () => {
                       const photo = await svc.store.readBlob(caseId, a.file);
                       if (!photo) throw new Error("사진 파일을 읽지 못했습니다");
@@ -281,6 +307,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
             ))}
           </div>
           {progress && <p className="muted">{progress}</p>}
+          <AreaErr area="cutout" />
         </div>
       )}
 
@@ -296,10 +323,12 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
             url={urls[it.file]}
             originalUrl={it.fromAssetId ? urls[doc.assets.find((a) => a.id === it.fromAssetId)?.file ?? ""] : undefined}
             busy={!!busy}
-            onPatch={(patch) => { if (!needName()) run(`item:${it.id}`, () => images.updateImage(caseId, it.id, patch, name)); }}
+            onPatch={(patch) => { if (!needName("gallery")) run(`item:${it.id}`, () => images.updateImage(caseId, it.id, patch, name)); }}
           />
         ))}
       </div>
+
+      <AreaErr area="gallery" />
 
       {/* 7. 확정 */}
       <div className="card stack small">
@@ -310,6 +339,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
             이미지 확정 (합성 단계로)
           </button>
         </div>
+        <AreaErr area="complete" />
       </div>
     </div>
   );

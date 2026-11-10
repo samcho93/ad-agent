@@ -271,20 +271,30 @@ export function buildImagePrompt(out: ImagePromptModelOutput, idea: Idea, policy
 /* 4. Figma 링크                                                         */
 /* ------------------------------------------------------------------ */
 
-/** https://www.figma.com/design/<key>/<name>?node-id=12-34 → { fileKey, nodeId: "12:34" } */
+const COPY_LINK_HELP = "Figma에서 가져올 프레임을 클릭해 선택한 뒤 우클릭 → '선택 항목 링크 복사'(Copy link to selection)로 얻은 링크를 넣어 주세요";
+
+/**
+ * Figma 링크 → { fileKey, nodeId }
+ * - https://www.figma.com/design/<key>/<name>?node-id=12-34
+ * - https://www.figma.com/file/<key>/<name>?node-id=12%3A34
+ * - 브랜치: https://www.figma.com/design/<key>/branch/<branchKey>/<name>?node-id=... (브랜치 키를 쓴다)
+ * - 프로토타입: ?node-id=... 또는 ?starting-point-node-id=...
+ */
 export function parseFigmaLink(url: string): { fileKey: string; nodeId: string } {
   let u: URL;
   try {
     u = new URL(url.trim());
   } catch {
-    throw new Error("Figma 링크 형식이 아닙니다");
+    throw new Error("Figma 링크 형식이 아닙니다 (https://www.figma.com/… 로 시작하는 주소)");
   }
   if (!/(^|\.)figma\.com$/.test(u.hostname)) throw new Error("figma.com 링크만 쓸 수 있습니다");
-  const m = /^\/(?:design|file|proto|board)\/([A-Za-z0-9]{10,})/.exec(u.pathname);
-  if (!m) throw new Error("Figma 파일 링크가 아닙니다 (…figma.com/design/파일키/… 형태)");
-  const raw = u.searchParams.get("node-id");
-  if (!raw) throw new Error("프레임 링크가 아닙니다. Figma에서 프레임을 선택하고 '선택 항목 링크 복사'를 쓰세요");
+  const m = /^\/(?:design|file|proto|board)\/([A-Za-z0-9]{10,})(?:\/branch\/([A-Za-z0-9]{10,}))?/.exec(u.pathname);
+  if (!m) throw new Error(`Figma 디자인 파일 링크가 아닙니다 (…figma.com/design/파일키/… 형태). ${COPY_LINK_HELP}`);
+  const fileKey = m[2] ?? m[1];
+  const raw = u.searchParams.get("node-id") ?? u.searchParams.get("starting-point-node-id");
+  if (!raw) throw new Error(`이 링크에는 가져올 프레임이 지정되어 있지 않습니다 (파일 전체 공유 링크). ${COPY_LINK_HELP}`);
   const nodeId = raw.replace(/-/g, ":");
   if (!/^\d+:\d+$/.test(nodeId)) throw new Error("프레임 id 형식이 올바르지 않습니다");
-  return { fileKey: m[1], nodeId };
+  if (nodeId.startsWith("0:")) throw new Error(`이 링크는 프레임이 아니라 페이지 전체를 가리킵니다 (node-id=${raw}). ${COPY_LINK_HELP}`);
+  return { fileKey, nodeId };
 }

@@ -38,8 +38,9 @@ export function describeFigmaRateLimit(headers: Headers): string {
 }
 
 export async function fetchFigmaFramePng(token: string, link: string, scale = 2): Promise<{ blob: Blob; fileKey: string; nodeId: string }> {
-  if (!token) throw new FigmaError(`Figma 개인 액세스 토큰이 없습니다. 설정 > 외부 디자인 도구에서 입력하세요. 토큰 없이 쓰려면: ${ALTERNATIVE}`);
+  // 링크부터 확인한다 (네트워크 없이 바로 알려 줄 수 있는 문제)
   const { fileKey, nodeId } = parseFigmaLink(link);
+  if (!token) throw new FigmaError(`Figma 개인 액세스 토큰이 없습니다. 설정 > 외부 디자인 도구에서 입력하세요. 토큰 없이 쓰려면: ${ALTERNATIVE}`);
   const url = `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}?ids=${encodeURIComponent(nodeId)}&format=png&scale=${scale}`;
   let res: Response;
   try {

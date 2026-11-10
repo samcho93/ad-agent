@@ -150,7 +150,11 @@ describe("이미지 규칙 검사", () => {
 
   it("Figma 링크 읽기", () => {
     expect(parseFigmaLink("https://www.figma.com/design/AbCdEfGhIjKl12/Banner?node-id=12-34&t=x")).toEqual({ fileKey: "AbCdEfGhIjKl12", nodeId: "12:34" });
-    expect(() => parseFigmaLink("https://www.figma.com/design/AbCdEfGhIjKl12/Banner")).toThrow(/프레임 링크/);
+    expect(() => parseFigmaLink("https://www.figma.com/design/AbCdEfGhIjKl12/Banner")).toThrow(/프레임이 지정되어 있지 않습니다/);
+    expect(() => parseFigmaLink("https://www.figma.com/design/AbCdEfGhIjKl12/Banner?node-id=0-1")).toThrow(/페이지 전체/);
+    expect(parseFigmaLink("https://www.figma.com/file/AbCdEfGhIjKl12/B?node-id=12%3A34").nodeId).toBe("12:34");
+    expect(parseFigmaLink("https://www.figma.com/design/AbCdEfGhIjKl12/branch/ZyXwVuTsRq98/B?node-id=5-6")).toEqual({ fileKey: "ZyXwVuTsRq98", nodeId: "5:6" });
+    expect(parseFigmaLink("https://www.figma.com/proto/AbCdEfGhIjKl12/B?starting-point-node-id=7%3A8").nodeId).toBe("7:8");
     expect(() => parseFigmaLink("https://evil.example/design/AbCdEfGhIjKl12/x?node-id=1-2")).toThrow(/figma.com/);
   });
 

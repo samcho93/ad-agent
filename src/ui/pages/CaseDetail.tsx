@@ -232,7 +232,7 @@ export default function CasePage({ id }: { id: string }) {
 
           <h2 id="images">이미지 (MVP 3단계)</h2>
           {locked ? (
-            <ImagesSection caseId={id} name={name} onChanged={() => run("load", async () => {})} />
+            <ImagesSection caseId={id} name={name} onName={(v) => { setName(v); saveName(v); }} onChanged={() => run("load", async () => {})} />
           ) : (
             <p className="small muted">게이트 1을 승인하면 이미지 단계가 열립니다.</p>
           )}
