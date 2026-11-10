@@ -8,6 +8,7 @@ import { Cases } from "./ui/pages/Cases";
 import CasePage from "./ui/pages/CaseDetail";
 import { SettingsPage } from "./ui/pages/Settings";
 import { PROVIDER_LABEL } from "./llm/select";
+import { currentModel } from "./core/settings";
 
 function Nav({ route }: { route: string[] }) {
   const { settings, store } = useApp();
@@ -33,6 +34,9 @@ function Banners() {
       )}
       {secretsStatus === "empty" && settings.llm.provider !== "fake" && (
         <div className="banner warn">LLM 연결이 없습니다. <a href={href("settings")}>설정에서 API 키 또는 Claude CLI 브리지를 연결</a>하세요.</div>
+      )}
+      {settings.llm.provider !== "fake" && !currentModel(settings) && (
+        <div className="banner warn">{PROVIDER_LABEL[settings.llm.provider]}의 모델을 아직 고르지 않았습니다. <a href={href("settings")}>설정에서 연결 확인 후 모델 선택</a></div>
       )}
       {folderNeedsPermission && (
         <div className="banner warn">

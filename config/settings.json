@@ -2,7 +2,12 @@
   "_note": "기본값. 사용자가 설정 화면에서 바꾼 값은 각자 브라우저에 저장된다. 미정 항목은 임의로 정하지 않는다 (docs/decisions.md).",
   "llm": {
     "provider": "anthropic",
-    "model": "claude-opus-5-5",
+    "models": {
+      "anthropic": "claude-opus-5-5",
+      "bridge": "claude-opus-5-5",
+      "openai": "",
+      "gemini": ""
+    },
     "effort": "high",
     "maxTokens": 32000,
     "bridgeUrl": "http://127.0.0.1:8787"

@@ -6,6 +6,7 @@ import { unresolved } from "@/core/brief";
 import { unknownQuestions, type Intake } from "@/core/intake";
 import { generateBrief, generateIdeas } from "@/llm/pipeline";
 import { PROVIDER_LABEL } from "@/llm/select";
+import { currentModel } from "@/core/settings";
 import { downloadJson, errMsg, go, href, useApp } from "../app";
 import type { Tag } from "@/core/tags";
 import { renderTag } from "@/core/tags";
@@ -147,7 +148,7 @@ export default function CasePage({ id }: { id: string }) {
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
         <div>
           <h1>{s.meta.company}</h1>
-          <span className="small muted">{s.meta.id} · {PROVIDER_LABEL[settings.llm.provider]} · 모델 {settings.llm.model} · 합성 백엔드 {s.meta.backend}</span>
+          <span className="small muted">{s.meta.id} · {PROVIDER_LABEL[settings.llm.provider]} · 모델 {currentModel(settings)} · 합성 백엔드 {s.meta.backend}</span>
         </div>
         <label className="small row">내 이름 <input type="text" style={{ width: 160 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => saveName(name)} /></label>
       </div>

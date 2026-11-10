@@ -1,13 +1,20 @@
 import defaults from "../../config/settings.json";
 
-/** LLM 연결 방식. 일반 사용자는 "anthropic"(본인 API 키), Claude CLI 사용자는 "bridge"(로컬 브리지) */
-export type LlmProvider = "anthropic" | "bridge" | "fake";
+/**
+ * LLM 연결 방식.
+ * - API 키: "anthropic" | "openai" | "gemini" (사용자 본인 키, 브라우저에서 직접 호출)
+ * - "bridge": Claude Code 사용자의 로컬 CLI 브리지
+ * - "fake": 개발용 가짜 모델
+ */
+export type LlmProvider = "anthropic" | "openai" | "gemini" | "bridge" | "fake";
+export type ModelProvider = Exclude<LlmProvider, "fake">;
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface Settings {
   llm: {
     provider: LlmProvider;
-    model: string;
+    /** 연결 방식마다 따로 기억하는 모델 이름. 비어 있으면 설정에서 골라야 한다 */
+    models: Record<ModelProvider, string>;
     effort: Effort;
     maxTokens: number;
     /** Claude CLI 브리지 주소 (이 PC에서 실행, 127.0.0.1 전용) */
@@ -24,12 +31,14 @@ export interface Settings {
 /** 비밀값. 사용자 브라우저에만 저장되고 서버로 보내지 않는다 (절대 규칙 6) */
 export interface Secrets {
   anthropicApiKey?: string;
+  openaiApiKey?: string;
+  geminiApiKey?: string;
   bridgeToken?: string;
   figmaToken?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  llm: { ...(defaults.llm as Settings["llm"]) },
+  llm: { ...(defaults.llm as Settings["llm"]), models: { ...(defaults.llm.models as Settings["llm"]["models"]) } },
   revision: defaults.revision,
   pricing: defaults.pricing,
   privacyRetention: defaults.privacyRetention,
@@ -41,12 +50,24 @@ export const DEFAULT_SETTINGS: Settings = {
 /** 저장된 설정을 기본값 위에 덮는다 (필드가 늘어나도 깨지지 않게) */
 export function mergeSettings(saved: Partial<Settings> | null | undefined): Settings {
   if (!saved) return structuredClone(DEFAULT_SETTINGS);
+  // 예전 형식(llm.model 하나)을 연결 방식별 models 로 옮긴다
+  const legacy = saved.llm as (Partial<Settings["llm"]> & { model?: string }) | undefined;
+  const models = { ...DEFAULT_SETTINGS.llm.models, ...(legacy?.models ?? {}) };
+  if (legacy?.model && !legacy.models) {
+    if (legacy.provider === "anthropic" || legacy.provider === "bridge") models[legacy.provider] = legacy.model;
+  }
+  const { model: _drop, ...llmRest } = legacy ?? {};
   return {
     ...structuredClone(DEFAULT_SETTINGS),
     ...saved,
-    llm: { ...DEFAULT_SETTINGS.llm, ...(saved.llm ?? {}) },
+    llm: { ...DEFAULT_SETTINGS.llm, ...llmRest, models },
     revision: { ...DEFAULT_SETTINGS.revision, ...(saved.revision ?? {}) },
   };
+}
+
+/** 지금 연결 방식의 모델 이름 */
+export function currentModel(s: Settings): string {
+  return s.llm.provider === "fake" ? "fake-model" : s.llm.models[s.llm.provider] ?? "";
 }
 
 /** 화면 표시용: 끝 4자리만 */

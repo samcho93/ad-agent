@@ -5,7 +5,7 @@ import path from "node:path";
 /**
  * 배포본에만 콘텐츠 보안 정책(CSP)을 넣는다. 개발 서버는 인라인 스크립트를 쓰므로 제외.
  * - 스크립트는 이 사이트 것만 실행 (외부 스크립트 없음: 브라우저에 저장한 키 보호)
- * - 네트워크는 Anthropic API, 로컬 브리지(127.0.0.1/localhost), Figma API 만 허용
+ * - 네트워크는 LLM API(Anthropic·OpenAI·Gemini), 로컬 브리지(127.0.0.1/localhost), Figma API 만 허용
  */
 function csp(): Plugin {
   const policy = [
@@ -14,7 +14,7 @@ function csp(): Plugin {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.anthropic.com http://127.0.0.1:* http://localhost:* https://api.figma.com",
+    "connect-src 'self' https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com http://127.0.0.1:* http://localhost:* https://api.figma.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'none'",

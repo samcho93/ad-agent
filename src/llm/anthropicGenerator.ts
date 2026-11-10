@@ -57,15 +57,16 @@ export function createAnthropicGenerator(opts: AnthropicOptions): Generator {
   };
 }
 
-/** 설정 화면의 "연결 확인": 아주 작은 요청으로 키가 유효한지만 본다 */
-export async function checkAnthropicKey(apiKey: string, model: string): Promise<string> {
+/** 설정 화면의 "연결 확인": 키가 유효한지 보고, 쓸 수 있는 모델 목록을 가져온다 */
+export async function listAnthropicModels(apiKey: string): Promise<string[]> {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   try {
-    const m = await client.models.retrieve(model);
-    return `연결됨 (${m.display_name})`;
+    const ids: string[] = [];
+    for await (const m of client.models.list()) ids.push(m.id);
+    return ids;
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new GenerationError("API 키가 올바르지 않습니다");
-    if (e instanceof Anthropic.NotFoundError) throw new GenerationError(`모델을 찾을 수 없습니다: ${model}`);
+    if (e instanceof Anthropic.APIConnectionError) throw new GenerationError("Anthropic API에 연결하지 못했습니다 (네트워크 확인)");
     if (e instanceof Anthropic.APIError) throw new GenerationError(`API 오류 (${e.status ?? "?"}): ${e.message}`);
     throw e;
   }
