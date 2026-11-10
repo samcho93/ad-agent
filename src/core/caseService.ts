@@ -18,7 +18,7 @@ export const STAGES = [
   { key: "export", label: "납품" },
 ] as const;
 
-export type CaseStatus = "intake_done" | "brief_draft" | "ideas_draft" | "gate1_approved" | "images_selected";
+export type CaseStatus = "intake_done" | "brief_draft" | "ideas_draft" | "gate1_approved" | "images_selected" | "compose_done";
 
 export interface CaseMeta {
   id: string;
@@ -150,7 +150,7 @@ export class CaseService {
   }
 
   private assertNotLocked(meta: CaseMeta) {
-    if (meta.status === "gate1_approved" || meta.status === "images_selected") throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
+    if (meta.status === "gate1_approved" || meta.status === "images_selected" || meta.status === "compose_done") throw new CaseError("게이트 1이 승인된 케이스는 브리프·아이디어를 바꿀 수 없습니다");
   }
 
   /** 단계 상태만 바꾼다 (이미지 단계 등에서 사용) */

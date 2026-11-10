@@ -62,7 +62,8 @@ function areaOf(label: string): Area {
   return "top";
 }
 
-export function ImagesSection({ caseId, name, onName, onChanged }: { caseId: string; name: string; onName: (v: string) => void; onChanged: () => void }) {
+export function ImagesSection({ caseId, name, status, onName, onChanged }: { caseId: string; name: string; status: string; onName: (v: string) => void; onChanged: () => void }) {
+  const confirmed = status === "images_selected" || status === "compose_done";
   const { svc, generator, secrets } = useApp();
   const images = useMemo(() => new ImageService(svc), [svc]);
   const [doc, setDoc] = useState<ImagesDoc | null>(null);
@@ -334,9 +335,9 @@ export function ImagesSection({ caseId, name, onName, onChanged }: { caseId: str
       {/* 7. 확정 */}
       <div className="card stack small">
         <h3>이미지 확정</h3>
-        {ready.ok ? <div className="okc">✓ 확정할 수 있습니다</div> : ready.blockers.map((b) => <div key={b} className="warn">✗ {b}</div>)}
+        {confirmed ? <div className="okc">✓ 이미지를 확정했습니다. 이미지를 바꾸면 확정이 풀립니다</div> : ready.ok ? <div className="okc">✓ 확정할 수 있습니다</div> : ready.blockers.map((b) => <div key={b} className="warn">✗ {b}</div>)}
         <div className="row">
-          <button className="primary" disabled={!!busy || !ready.ok || !name.trim()} onClick={() => run("complete", () => images.complete(caseId, name))}>
+          <button className="primary" disabled={!!busy || confirmed || !ready.ok || !name.trim()} onClick={() => run("complete", () => images.complete(caseId, name))}>
             이미지 확정 (합성 단계로)
           </button>
         </div>

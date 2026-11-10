@@ -23,7 +23,7 @@ export interface CaseStore {
 export const FILE_NAME_RE = /^[0-9A-Za-z_.-]{1,64}$/;
 
 /** 케이스 안에서 허용하는 하위 폴더 (한 단계만) */
-export const SUBDIRS = ["04_images", "assets"] as const;
+export const SUBDIRS = ["04_images", "05_compose", "assets"] as const;
 
 /** "02_brief.md" 또는 "04_images/img_01.png" 형태만 허용한다 */
 export function assertFileName(name: string) {

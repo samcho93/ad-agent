@@ -36,7 +36,7 @@ export class ImageService {
 
   async assertOpen(id: string) {
     const meta = await this.svc.getMeta(id);
-    if (meta.status !== "gate1_approved" && meta.status !== "images_selected") throw new CaseError("게이트 1 승인 뒤에 이미지 단계를 진행할 수 있습니다");
+    if (meta.status !== "gate1_approved" && meta.status !== "images_selected" && meta.status !== "compose_done") throw new CaseError("게이트 1 승인 뒤에 이미지 단계를 진행할 수 있습니다");
     return meta;
   }
 
@@ -47,9 +47,9 @@ export class ImageService {
 
   private async saveDoc(id: string, doc: ImagesDoc) {
     await this.store.write(id, DOC, JSON.stringify(doc, null, 2) + "\n");
-    // 이미지를 바꾸면 "이미지 확정"을 풀어 다시 확인하게 한다
+    // 이미지를 바꾸면 "이미지 확정"(과 그 뒤 합성 완료)을 풀어 다시 확인하게 한다
     const meta = await this.svc.getMeta(id);
-    if (meta.status === "images_selected") await this.svc.setStatus(id, "gate1_approved");
+    if (meta.status === "images_selected" || meta.status === "compose_done") await this.svc.setStatus(id, "gate1_approved");
   }
 
   async log(id: string, entry: Record<string, unknown>) {

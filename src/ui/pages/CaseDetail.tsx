@@ -9,6 +9,7 @@ import { PROVIDER_LABEL } from "@/llm/select";
 import { currentModel } from "@/core/settings";
 import { downloadJson, errMsg, go, href, useApp } from "../app";
 import { ImagesSection } from "./ImagesSection";
+import { ComposeSection } from "./ComposeSection";
 import type { Tag } from "@/core/tags";
 import { renderTag } from "@/core/tags";
 import type { BriefRow } from "@/core/brief";
@@ -55,6 +56,7 @@ async function loadState(svc: CaseService, id: string): Promise<CaseState> {
 }
 
 function stageIndex(s: CaseState): number {
+  if (s.meta.status === "compose_done") return 6;
   if (s.meta.status === "images_selected") return 5;
   if (s.meta.status === "gate1_approved") return 4;
   if (s.ideas) return 3;
@@ -120,7 +122,7 @@ export default function CasePage({ id }: { id: string }) {
   if (!s) return <main className="wrap">{err ? <p className="err">{err}</p> : <p className="muted">불러오는 중…</p>}</main>;
 
   // 게이트 1 승인 뒤에는 브리프·아이디어가 잠긴다
-  const locked = s.meta.status === "gate1_approved" || s.meta.status === "images_selected";
+  const locked = s.meta.status === "gate1_approved" || s.meta.status === "images_selected" || s.meta.status === "compose_done";
   const now = stageIndex(s);
   const brief = s.brief;
   const ideas = s.ideas;
@@ -232,9 +234,16 @@ export default function CasePage({ id }: { id: string }) {
 
           <h2 id="images">이미지 (MVP 3단계)</h2>
           {locked ? (
-            <ImagesSection caseId={id} name={name} onName={(v) => { setName(v); saveName(v); }} onChanged={() => run("load", async () => {})} />
+            <ImagesSection caseId={id} name={name} status={s.meta.status} onName={(v) => { setName(v); saveName(v); }} onChanged={() => run("load", async () => {})} />
           ) : (
             <p className="small muted">게이트 1을 승인하면 이미지 단계가 열립니다.</p>
+          )}
+
+          <h2 id="compose">합성 (MVP 2단계)</h2>
+          {s.meta.status === "images_selected" || s.meta.status === "compose_done" ? (
+            <ComposeSection caseId={id} name={name} status={s.meta.status} onChanged={() => run("load", async () => {})} />
+          ) : (
+            <p className="small muted">이미지를 확정하면 합성 단계가 열립니다.</p>
           )}
 
           <h2>승인 기록</h2>
@@ -246,8 +255,11 @@ export default function CasePage({ id }: { id: string }) {
         <div className="inner">
           {locked ? (
             <span className="small okc">
-              <strong>{s.meta.status === "images_selected" ? "이미지 확정 완료 — 다음은 합성(MVP 2단계, 아직 구현 전)" : "게이트 1 승인 완료 — 이미지 단계를 진행하세요"}</strong>{" "}
-              <a href="#images" onClick={(e) => { e.preventDefault(); document.getElementById("images")?.scrollIntoView({ behavior: "smooth" }); }}>이미지로 이동</a>
+              <strong>{s.meta.status === "compose_done" ? "합성 완료 — 다음은 검수·게이트 2 (MVP 4단계, 구현 전)" : s.meta.status === "images_selected" ? "이미지 확정 완료 — 합성 단계를 진행하세요" : "게이트 1 승인 완료 — 이미지 단계를 진행하세요"}</strong>{" "}
+              {(() => {
+                const target = s.meta.status === "gate1_approved" ? "images" : "compose";
+                return <a href={`#${target}`} onClick={(e) => { e.preventDefault(); document.getElementById(target)?.scrollIntoView({ behavior: "smooth" }); }}>{target === "images" ? "이미지로 이동" : "합성으로 이동"}</a>;
+              })()}
             </span>
           ) : (
             <>
