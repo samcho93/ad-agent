@@ -62,6 +62,7 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
   const [figmaLink, setFigmaLink] = useState("");
   const [promptForImport, setPromptForImport] = useState("");
   const [uploadTool, setUploadTool] = useState("Figma (PNG로 내보내기)");
+  const [pasteTool, setPasteTool] = useState("Figma (PNG로 복사)");
 
   const reload = useCallback(async () => {
     let d = await images.getDoc(caseId);
@@ -222,6 +223,30 @@ export function ImagesSection({ caseId, name, onChanged }: { caseId: string; nam
           >
             {busy === "upload" ? "올리는 중…" : "직접 올리기"}
           </button>
+        </div>
+        <div className="row">
+          <input type="text" placeholder="사용한 도구 (기록용)" value={pasteTool} onChange={(e) => setPasteTool(e.target.value)} style={{ width: 260 }} />
+        </div>
+        <div
+          tabIndex={0}
+          role="button"
+          aria-label="여기를 누르고 Ctrl+V 로 이미지 붙여넣기"
+          className="card"
+          style={{ borderStyle: "dashed", textAlign: "center", padding: 18, cursor: "copy", outlineOffset: 2 }}
+          onPaste={(e) => {
+            e.preventDefault();
+            const files = [...e.clipboardData.items].filter((it) => it.kind === "file" && it.type.startsWith("image/")).map((it) => it.getAsFile()).filter((f): f is File => !!f);
+            if (!files.length) return setErr("붙여 넣은 내용에 이미지가 없습니다. Figma에서 프레임을 고르고 Ctrl+Shift+C(PNG로 복사) 했는지 확인하세요");
+            if (needName() || !pasteTool.trim()) return;
+            run("paste", async () => { for (const f of files) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: pasteTool.trim(), promptId: promptForImport || undefined }, name); });
+          }}
+        >
+          {busy === "paste" ? "붙여 넣는 중…" : (
+            <>
+              <b>여기를 누르고 Ctrl+V</b> 로 이미지 붙여넣기
+              <div className="muted">Figma: 프레임 선택 → Ctrl+Shift+C (PNG로 복사). Figma API 한도를 쓰지 않아 무료 플랜에서도 제한 없이 쓸 수 있습니다.</div>
+            </>
+          )}
         </div>
         <p className="muted">가져온 이미지는 바로 저장되고, 도구·프롬프트·날짜가 기록됩니다.</p>
       </div>

@@ -161,3 +161,32 @@ describe("이미지 규칙 검사", () => {
     expect(() => assertFileName("other/a.png")).toThrow();
   });
 });
+
+describe("Figma 한도 안내", () => {
+  it("월간 한도(긴 Retry-After)면 며칠 뒤와 붙여넣기·직접 올리기를 안내한다", async () => {
+    const { describeFigmaRateLimit } = await import("@/integrations/figma");
+    const h = new Headers({ "retry-after": String(5 * 86400), "x-figma-plan-tier": "starter", "x-figma-rate-limit-type": "low", "x-figma-upgrade-link": "https://www.figma.com/pricing" });
+    const msg = describeFigmaRateLimit(h);
+    expect(msg).toContain("약 5일");
+    expect(msg).toContain("플랜: starter");
+    expect(msg).toContain("Ctrl+Shift+C");
+    expect(msg).toContain("직접 올리기");
+    expect(msg).toContain("https://www.figma.com/pricing");
+  });
+
+  it("짧은 한도면 잠깐 기다리라고 한다", async () => {
+    const { describeFigmaRateLimit } = await import("@/integrations/figma");
+    expect(describeFigmaRateLimit(new Headers({ "retry-after": "30" }))).toContain("30초 뒤에 다시 시도");
+  });
+
+  it("가져오기에서 429를 받으면 그 안내로 실패한다", async () => {
+    const { fetchFigmaFramePng } = await import("@/integrations/figma");
+    const { vi } = await import("vitest");
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 429, headers: { "retry-after": "2592000" } }));
+    try {
+      await expect(fetchFigmaFramePng("tok", "https://www.figma.com/design/AbCdEfGhIjKl12/B?node-id=1-2")).rejects.toThrow(/약 30일/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
