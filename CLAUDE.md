@@ -17,7 +17,8 @@ AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 
 - 실제로 확인하지 못한 것은 `README.md` 5절과 `docs/decisions.md` 의 "확인 필요"에 있다.
 
 ## 구조 (확정)
-- 서버 없는 정적 웹 앱 (Vite + React + TypeScript), GitHub Pages 배포: https://samcho93.github.io/ad-agent/
+- 서버 없는 정적 웹 앱 (Vite + React + TypeScript). 배포: Cloudflare Pages https://ad-agent-4k9.pages.dev/ (`npm run deploy:cf`) 와 GitHub Pages https://samcho93.github.io/ad-agent/ (main 푸시). SamStudy 강좌 허브(irodmas.com)에는 Cloudflare 주소로 등록한다.
+- 빌드는 상대 경로(`base: "./"`)다. 절대 경로(`/assets/...`)를 코드에 쓰지 않는다 (허브의 `irodmas.com/<강좌>/` 아래에서도 동작해야 함).
 - 케이스 데이터와 키는 사용자 PC·브라우저에만 저장한다 (IndexedDB 또는 고른 폴더, 키는 선택적으로 비밀번호 암호화).
 - LLM: 사용자 본인 키로 브라우저에서 직접 호출 (Anthropic / OpenAI / Gemini), 또는 이 PC의 Claude CLI 브리지(`bridge/bridge.mjs`, 127.0.0.1 전용). 개발·시험은 가짜 모델(`npm run dev:fake`).
 - 이미지는 Figma에서 만든다 (사용자 결정). 앱은 프롬프트를 쓰고 Figma REST·붙여넣기·직접 올리기로 받고, 누끼는 브라우저 안에서 한다.
@@ -59,5 +60,6 @@ npm run dev:fake   # 가짜 모델 (키 불필요)
 npm test
 npm run typecheck
 npm run build
+npm run deploy:cf  # Cloudflare Pages 배포
 node bridge/bridge.mjs   # Claude CLI 브리지
 ```

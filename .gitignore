@@ -13,3 +13,6 @@ dist/
 
 # 원본 업무 문서: 공개 저장소에 올리지 않는다 (로컬에만 보관)
 docs/source/
+
+# Cloudflare wrangler 임시 파일
+.wrangler/

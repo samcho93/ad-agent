@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "bridge": "node bridge/bridge.mjs"
+    "bridge": "node bridge/bridge.mjs",
+    "deploy:cf": "vite build --mode cloudflare && npx wrangler pages deploy dist --project-name ad-agent --branch main",
+    "build:cf": "vite build --mode cloudflare"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

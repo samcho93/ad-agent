@@ -61,15 +61,21 @@ async function pickAttempt(): Promise<Attempt> {
   return GPU_ATTEMPT;
 }
 
+/** 빌드할 때 정해진다: "" 이면 이 사이트의 ort/, 아니면 그 주소 */
+declare const __ORT_WASM_BASE__: string;
+
 /** 한 번 준비한 모델은 이 탭에서 계속 쓴다 */
 let working: { seg: Segmenter; attempt: Attempt } | null = null;
 
 async function configure() {
   const tf = await import("@huggingface/transformers");
-  const base = import.meta.env.BASE_URL;
+  // 상대 경로 배포("./")에서도 워커가 찾을 수 있게 절대 주소로 바꾼다
+  const base = new URL(import.meta.env.BASE_URL, location.href).href;
   // 런타임 파일은 이 사이트의 /ort/ 에서 (vite.config.ts 가 빌드에 복사)
   const onnx = tf.env.backends.onnx as { wasm?: { wasmPaths?: unknown } };
-  if (onnx.wasm) onnx.wasm.wasmPaths = { mjs: `${base}ort/ort-wasm-simd-threaded.asyncify.mjs`, wasm: `${base}ort/ort-wasm-simd-threaded.asyncify.wasm` };
+  // Cloudflare 빌드는 25MiB 한도 때문에 wasm 만 jsDelivr 의 같은 버전에서 받는다 (vite.config.ts)
+  const wasmBase = __ORT_WASM_BASE__ || `${base}ort/`;
+  if (onnx.wasm) onnx.wasm.wasmPaths = { mjs: `${base}ort/ort-wasm-simd-threaded.asyncify.mjs`, wasm: `${wasmBase}ort-wasm-simd-threaded.asyncify.wasm` };
   (tf.env as { useWasmCache?: boolean }).useWasmCache = false;
   tf.env.allowLocalModels = false;
   return tf;

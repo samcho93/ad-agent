@@ -3,9 +3,9 @@
 광고 배너 한 건을 만드는 일을 **"사람 4명이 약 3일"에서 "AI + 사람 1명"으로** 줄이기 위한 에이전트입니다.
 AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 만들고, **사람이 고르고 확정합니다.** AI 결과를 그대로 내보내지 않습니다.
 
-- 사이트: https://samcho93.github.io/ad-agent/
-- 광고주용 질문지: https://samcho93.github.io/ad-agent/#/intake?mode=client
-- 광고주용 시안 확인: https://samcho93.github.io/ad-agent/#/proof
+- 사이트 (Cloudflare Pages): https://ad-agent-4k9.pages.dev/ · 같은 앱 GitHub Pages: https://samcho93.github.io/ad-agent/
+- 광고주용 질문지: https://ad-agent-4k9.pages.dev/#/intake?mode=client
+- 광고주용 시안 확인: https://ad-agent-4k9.pages.dev/#/proof
 - 이 도움말은 저장소의 `README.md` 와 앱의 **도움말** 메뉴에 같은 내용으로 들어 있습니다.
 
 ---
@@ -209,7 +209,7 @@ Claude Code가 설치·로그인된 PC에서 (Node 18 이상, 의존성 없음):
 node bridge/bridge.mjs
 ```
 - 화면에 나오는 주소와 **연결 코드**를 웹 앱 설정에 넣습니다. 코드는 `~/.ad-agent-bridge.json` 에 저장됩니다 (`--new-code` 로 새로 만들기).
-- 127.0.0.1 에서만 열리고, 허용된 웹 주소에서 온 요청만 받습니다. 다른 주소에서 쓰려면 `--origin https://...`.
+- 127.0.0.1 에서만 열리고, 허용된 웹 주소(Cloudflare Pages, GitHub Pages, irodmas.com, localhost)에서 온 요청만 받습니다. 다른 주소에서 쓰려면 `--origin https://...`.
 - 하는 일은 `claude -p --json-schema` 구조화 생성 하나뿐입니다(도구 없음). 검수 때는 시안 이미지도 함께 넘깁니다(0.2.0부터). 프롬프트와 이미지는 기록하지 않습니다.
 - Chrome에서 처음 연결할 때 "로컬 네트워크 접근" 허용을 물을 수 있습니다.
 
@@ -224,7 +224,9 @@ npm test           # API 호출 없는 테스트
 npm run typecheck
 npm run build      # dist/ (배포본에는 CSP가 들어간다)
 ```
-배포: `main` 에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드 후 GitHub Pages에 올립니다.
+배포는 두 곳입니다. 빌드는 상대 경로(`base: "./"`)라 어느 주소 아래에 올려도 동작합니다 (SamStudy 허브 `irodmas.com/<강좌>/` 포함).
+- **Cloudflare Pages** (`wrangler.toml`, 프로젝트 `ad-agent`): `npm run deploy:cf` (= `vite build --mode cloudflare` 후 `wrangler pages deploy dist`). Pages 는 파일 하나가 25MiB 까지라, 누끼용 ONNX 런타임 wasm(25.6MiB)만 jsDelivr 의 같은 버전(바이트 동일)에서 받습니다.
+- **GitHub Pages**: `main` 에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드 후 올립니다.
 
 | 경로 | 내용 |
 |---|---|

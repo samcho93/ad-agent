@@ -148,3 +148,11 @@
 - 납품: 고른 시안의 사이즈별 PNG, compose_spec, qa_report.md, approvals.md, revisions.md, 02_brief.md, README.txt 를 ZIP 하나로 (fflate, MIT). ZIP 은 케이스에 저장하지 않고 내려받기만 하며, 납품 기록은 `delivery.json`·`approvals.md` 에 남는다. 납품 뒤에도 같은 ZIP 을 다시 받을 수 있다.
 - 상태: 합성 완료 → 검수 완료(qa_done) → 게이트 2 통과 → 광고주 확정 → 납품 완료.
 - 확인 필요: 실제 LLM(API 키 3종, 브리지+Opus)으로 실제 시안 이미지 검수 품질, 비용(이미지 6~7장/회).
+
+## Cloudflare 배포 메모 (2026-11-10)
+- 다른 강좌처럼 SamStudy 허브에 등록하려고 Cloudflare Pages 프로젝트 `ad-agent` 를 만들었다: https://ad-agent-4k9.pages.dev/ (`wrangler.toml`, `npm run deploy:cf`). 최신 wrangler 는 Pages 를 Workers 로 넘기려 해서 프로젝트를 만들 때만 `--force` 로 예전 방식(Pages)으로 만들었다 (다른 강좌의 `*.pages.dev` 와 같은 방식).
+- 빌드 경로를 상대 경로(`./`)로 바꿨다. Cloudflare(루트), GitHub Pages(/ad-agent/), 허브(irodmas.com/<강좌>/) 어디서나 같은 빌드가 동작한다. 누끼 런타임 주소도 실행 시 절대 주소로 바꾼다.
+- Pages 파일 한도 25MiB: ONNX 런타임 wasm(25.6MiB)은 Cloudflare 빌드에서만 jsDelivr `onnxruntime-web@<설치 버전>` 에서 받는다(바이트 동일 확인, CORS 허용). CSP connect-src 에 cdn.jsdelivr.net 을 그 빌드에만 넣었다. transformers.js 가 끌어오던 쓰지 않는 wasm 사본(assets/)은 모든 빌드에서 뺐다.
+- 브리지 0.2.1: 허용 웹 주소에 https://ad-agent-4k9.pages.dev, https://irodmas.com 추가.
+- 허브 등록 자체는 SamStudy 데스크톱 앱에서 한다 (README 를 읽어 카드를 만든다).
+

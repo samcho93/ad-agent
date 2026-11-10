@@ -26,9 +26,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const DEFAULT_ORIGINS = [
   "https://samcho93.github.io",
+  "https://ad-agent-4k9.pages.dev", // Cloudflare Pages
+  "https://irodmas.com", // SamStudy 허브 (irodmas.com/<강좌>/)
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:4173",

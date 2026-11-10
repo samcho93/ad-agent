@@ -1,0 +1,5 @@
+# Cloudflare Pages — Vite 빌드 결과(dist/)를 올린다.
+#   npm run deploy:cf   (= npm run build && npx wrangler pages deploy dist --project-name ad-agent)
+name = "ad-agent"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-11-10"
