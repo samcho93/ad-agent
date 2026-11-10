@@ -1,16 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
+import defaults from "../../config/settings.json";
+
+/** LLM 연결 방식. 일반 사용자는 "anthropic"(본인 API 키), Claude CLI 사용자는 "bridge"(로컬 브리지) */
+export type LlmProvider = "anthropic" | "bridge" | "fake";
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface Settings {
   llm: {
-    /** "claude-cli": 로그인된 Claude Code CLI 사용 (키 불필요). "api": Anthropic API 키 사용 */
-    backend: "claude-cli" | "api";
-    cliPath?: string;
+    provider: LlmProvider;
     model: string;
-    effort: "low" | "medium" | "high" | "xhigh" | "max";
+    effort: Effort;
     maxTokens: number;
+    /** Claude CLI 브리지 주소 (이 PC에서 실행, 127.0.0.1 전용) */
+    bridgeUrl: string;
   };
-  casesDir: string;
   revision: { includedCount: string | number; includedCountRange: string };
   pricing: string;
   privacyRetention: string;
@@ -19,23 +21,36 @@ export interface Settings {
   composeBackend: string;
 }
 
-export const PROJECT_ROOT = process.env.AD_AGENT_ROOT ?? process.cwd();
-
-let cached: Settings | null = null;
-
-export function loadSettings(): Settings {
-  if (cached) return cached;
-  const file = path.join(PROJECT_ROOT, "config", "settings.json");
-  cached = JSON.parse(fs.readFileSync(file, "utf8")) as Settings;
-  return cached;
+/** 비밀값. 사용자 브라우저에만 저장되고 서버로 보내지 않는다 (절대 규칙 6) */
+export interface Secrets {
+  anthropicApiKey?: string;
+  bridgeToken?: string;
+  figmaToken?: string;
 }
 
-export function casesRoot(): string {
-  return process.env.AD_AGENT_CASES_DIR ?? path.join(PROJECT_ROOT, loadSettings().casesDir);
+export const DEFAULT_SETTINGS: Settings = {
+  llm: { ...(defaults.llm as Settings["llm"]) },
+  revision: defaults.revision,
+  pricing: defaults.pricing,
+  privacyRetention: defaults.privacyRetention,
+  imageModel: defaults.imageModel,
+  defaultVariants: defaults.defaultVariants,
+  composeBackend: defaults.composeBackend,
+};
+
+/** 저장된 설정을 기본값 위에 덮는다 (필드가 늘어나도 깨지지 않게) */
+export function mergeSettings(saved: Partial<Settings> | null | undefined): Settings {
+  if (!saved) return structuredClone(DEFAULT_SETTINGS);
+  return {
+    ...structuredClone(DEFAULT_SETTINGS),
+    ...saved,
+    llm: { ...DEFAULT_SETTINGS.llm, ...(saved.llm ?? {}) },
+    revision: { ...DEFAULT_SETTINGS.revision, ...(saved.revision ?? {}) },
+  };
 }
 
-/** 스킬 파일(SKILL.md)의 본문. 프롬프트의 단일 원본이다. */
-export function readSkill(name: string): string {
-  const file = path.join(PROJECT_ROOT, ".claude", "skills", name, "SKILL.md");
-  return fs.readFileSync(file, "utf8").replace(/^---[\s\S]*?---\s*/, "");
+/** 화면 표시용: 끝 4자리만 */
+export function maskSecret(v: string | undefined): string {
+  if (!v) return "없음";
+  return v.length <= 4 ? "••••" : `••••${v.slice(-4)}`;
 }

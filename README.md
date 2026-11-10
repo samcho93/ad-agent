@@ -3,33 +3,52 @@
 배경과 결정은 [CLAUDE.md](CLAUDE.md), [docs/architecture.md](docs/architecture.md), [docs/decisions.md](docs/decisions.md) 참고.
 
 ## 현재 범위: MVP 1단계
-질문지(광고주, 모바일) → 브리프 2부(AI 초안, 출처 태그) → 아이디어 3안 → 게이트 1(사람이 확정·선택·승인)
+질문지 → 브리프 2부(AI 초안, 출처 태그) → 아이디어 3안 → 게이트 1(사람이 확정·선택·승인)
 
-## 실행
+## 구조: 서버 없는 정적 웹 앱
+- **웹 앱**(GitHub Pages): 화면과 에이전트 로직이 모두 브라우저에서 돈다.
+- **데이터**: 케이스(질문지 답, 브리프, 승인 기록)는 사용자 PC에만 저장한다. 브라우저 저장소(IndexedDB) 또는 Chrome·Edge에서 고른 PC 폴더.
+- **키**: API 키·연결 코드·토큰은 사용자 브라우저에만 저장한다. 원하면 비밀번호로 암호화한다.
+- **LLM 연결**(설정 화면에서 선택)
+  - 일반 사용자: 본인의 Anthropic API 키. 브라우저가 Anthropic API를 직접 호출한다.
+  - Claude Code 사용자: 이 PC에서 [브리지](bridge/bridge.mjs)를 실행해 Claude CLI로 생성한다.
+- 모델에는 상호와 질문지 답만 보내고 담당자 이름·연락처는 보내지 않는다.
+
+## 사용
+1. 설정에서 LLM 연결 (API 키 입력, 또는 브리지 실행 후 연결 코드 입력)
+2. 질문지: 담당자가 직접 입력하거나, 광고주에게 `#/intake?mode=client` 링크를 보내 답변 파일을 받아 "케이스 > 광고주 답변 파일 가져오기"
+3. 케이스에서 브리프·아이디어 생성 → 확정 항목 처리 → 아이디어 선택 → 게이트 1 승인
+4. 다른 사람·PC로 넘길 때는 "케이스 파일 내보내기/가져오기"
+
+## Claude CLI 브리지
+Claude Code가 설치·로그인된 PC에서 (Node 18 이상, 의존성 없음):
+```bash
+node bridge/bridge.mjs
+```
+- 화면에 나오는 주소와 **연결 코드**를 웹 앱 설정에 넣는다. 코드는 `~/.ad-agent-bridge.json`에 저장된다 (`--new-code`로 새로 만들기).
+- 127.0.0.1에서만 열리고, 허용된 웹 주소에서 온 요청만 받는다. 다른 주소에서 쓰려면 `--origin https://...`.
+- 하는 일은 `claude -p --json-schema` 구조화 생성 하나뿐이다(도구 없음). 프롬프트는 기록하지 않는다.
+
+## 개발
 ```bash
 npm install
-npm run dev                  # http://localhost:3000
+npm run dev        # http://localhost:5173
+npm run dev:fake   # 가짜 모델로 화면만 시험 (키 불필요)
+npm test           # API 호출 없는 테스트
+npm run build      # dist/ (배포본에는 CSP가 들어간다)
 ```
-LLM 호출 방식은 `config/settings.json` 의 `llm.backend` 로 고른다 (환경 변수 `AD_AGENT_LLM_BACKEND` 가 우선).
-- `"claude-cli"` (현재 기본): 로그인된 Claude Code CLI(`claude -p --json-schema`)를 쓴다. API 키가 필요 없다. 개발·시험용.
-- `"api"`: Anthropic API 키를 쓴다. `cp .env.example .env.local` 후 `ANTHROPIC_API_KEY` 입력 (저장소에 올리지 않음). 웹 배포(BYOK)는 이 경로를 쓴다.
-- 광고주 질문지: `/intake`
-- 내부 콘솔: `/console`
-- API 키 없이 화면만 시험: `npm run dev:fake` (포트 3001, 가짜 모델 응답, 케이스는 `cases-fake/`)
-- 실제 모델로 가상 광고주(쿠키 가게) 1회 실행: `npm run demo:cookie` (CLI 백엔드 기준 약 3~4분, 약 $0.4)
-- 테스트(API 호출 없음): `npm test`
+배포: `main`에 푸시하면 [GitHub Actions](.github/workflows/pages.yml)가 테스트·빌드 후 Pages에 올린다.
 
-## 구조
+## 코드 구조
 | 경로 | 내용 |
 |---|---|
-| `.claude/skills/` | 스킬 = 프롬프트의 단일 원본. 서버가 SKILL.md를 읽어 시스템 프롬프트로 쓴다 |
-| `src/core/intake.ts` | 1부 질문 0~11번 스키마, 모델에 보내는 형태(담당자·연락처 제외) |
-| `src/core/brief.ts` | 브리프 항목 정의, 태그·"추정" 표시를 코드로 붙임, 체크리스트, 02_brief.md 렌더 |
-| `src/core/ideas.ts` | 방향표, 아이디어 검증, 03_ideas.md 렌더 |
-| `src/core/validate.ts` | 지어낸 숫자·근거, 금지어, 심의 키워드, 이미지 속 글자·로고 묘사 검사 |
-| `src/core/case.ts` | 케이스 폴더, 상태 전이, 게이트 1 승인과 잠금, approvals.md |
-| `src/llm/` | Claude 호출(CLI 또는 API, 구조화된 출력), 검증 실패 시 1회 재생성, llm_log.jsonl(시도별 검증 결과·비용) |
-| `config/settings.json` | 모델, 미정 항목(수정 횟수·가격·보관 기간·이미지 모델) |
+| `.claude/skills/` | 스킬 = 프롬프트의 단일 원본. 빌드에 텍스트로 들어간다 |
+| `src/core/` | 질문지 스키마, 브리프·아이디어 생성 결과 검증과 태그 부착, 케이스 서비스(게이트·잠금·내보내기) |
+| `src/llm/` | API 키 생성기, 브리지 생성기, 가짜 생성기, 검증 실패 시 1회 재생성 파이프라인 |
+| `src/storage/` | 케이스 저장소(IndexedDB / PC 폴더 / 메모리), 설정·비밀값 저장과 암호화 |
+| `src/ui/` | 화면 (홈, 질문지, 케이스, 케이스 상세, 설정) |
+| `bridge/bridge.mjs` | Claude CLI 브리지 (로컬 실행, 배포본에 포함되지 않음) |
+| `config/settings.json` | 기본값과 미정 항목 |
 
 ## 규칙을 지키는 방법
 - 모델은 JSON 스키마로만 답하고, 출처 태그와 `[추정]`은 코드가 붙인다. "모르겠음" 질문에서 나온 항목은 모델이 빠뜨려도 `[추정]`이 붙는다.

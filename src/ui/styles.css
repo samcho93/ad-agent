@@ -70,3 +70,15 @@ table.brief th { color: var(--muted); font-weight: 500; }
 h1 { font-size: 22px; margin: 0 0 8px; }
 h2 { font-size: 18px; margin: 28px 0 10px; }
 h3 { font-size: 16px; margin: 0 0 6px; }
+.topnav { display: flex; gap: 14px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.topnav a { text-decoration: none; color: var(--ink); font-size: 14px; }
+.topnav a.on { color: var(--accent); font-weight: 600; }
+.topnav .spacer { flex: 1; }
+.banner { padding: 10px 16px; font-size: 14px; border-bottom: 1px solid var(--line); }
+.banner.warn { background: var(--tag-user); }
+.banner.err { background: var(--tag-estimate); }
+label.field { display: block; font-size: 14px; }
+label.field > span { display: block; color: var(--muted); margin-bottom: 4px; }
+select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+input[type=password], input[type=url] { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--tag-ai); padding: 1px 5px; border-radius: 4px; }

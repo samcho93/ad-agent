@@ -1,8 +1,12 @@
-"use client";
-
-import { use, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import type { CaseState } from "@/lib/state";
+import { useCallback, useEffect, useState } from "react";
+import type { CaseMeta, CaseService, Gate1Readiness } from "@/core/caseService";
+import type { BriefDoc } from "@/core/brief";
+import type { IdeasDoc } from "@/core/ideas";
+import { unresolved } from "@/core/brief";
+import { unknownQuestions, type Intake } from "@/core/intake";
+import { generateBrief, generateIdeas } from "@/llm/pipeline";
+import { PROVIDER_LABEL } from "@/llm/select";
+import { downloadJson, errMsg, go, href, useApp } from "../app";
 import type { Tag } from "@/core/tags";
 import { renderTag } from "@/core/tags";
 import type { BriefRow } from "@/core/brief";
@@ -19,6 +23,34 @@ const STAGES = [
   { key: "gate2", label: "게이트 2", gate: true },
   { key: "export", label: "납품" },
 ];
+
+interface CaseState {
+  meta: CaseMeta;
+  intake: Intake;
+  unknowns: number[];
+  brief: BriefDoc | null;
+  ideas: IdeasDoc | null;
+  openCount: number | null;
+  readiness: Gate1Readiness;
+  approvals: string;
+}
+
+async function loadState(svc: CaseService, id: string): Promise<CaseState> {
+  const meta = await svc.getMeta(id);
+  const intake = await svc.getIntake(id);
+  const brief = await svc.getBrief(id);
+  const ideas = await svc.getIdeas(id);
+  return {
+    meta,
+    intake,
+    unknowns: unknownQuestions(intake),
+    brief,
+    ideas,
+    openCount: brief ? unresolved(brief).length : null,
+    readiness: await svc.gate1Readiness(id),
+    approvals: await svc.readApprovals(id),
+  };
+}
 
 function stageIndex(s: CaseState): number {
   if (s.meta.status === "gate1_approved") return 4;
@@ -44,9 +76,8 @@ function saveName(n: string) {
   try { localStorage.setItem("ad-agent:name", n); } catch { /* 저장 안 돼도 동작 */ }
 }
 
-export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
-  // 라우트 파라미터는 인코딩된 채로 온다 (한글 케이스 id). 한 번만 풀어서 쓴다.
-  const id = decodeURIComponent(use(params).id);
+export default function CasePage({ id }: { id: string }) {
+  const { svc, settings, generator } = useApp();
   const [s, setS] = useState<CaseState | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [err, setErr] = useState("");
@@ -56,24 +87,32 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => setName(getName()), []);
 
-  const call = useCallback(async (label: string, url: string, body?: unknown) => {
-    setBusy(label);
-    setErr("");
-    try {
-      const res = await fetch(url, body === undefined && label === "load" ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "요청 실패");
-      setS(j as CaseState);
-      if ((j as CaseState).ideas?.selectedId) setPicked((j as CaseState).ideas!.selectedId!);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "요청 실패");
-    } finally {
-      setBusy("");
-    }
-  }, []);
+  /** 작업 하나를 실행하고 화면 상태를 다시 읽는다 */
+  const run = useCallback(
+    async (label: string, work: () => Promise<unknown>) => {
+      setBusy(label);
+      setErr("");
+      try {
+        await work();
+      } catch (e) {
+        setErr(errMsg(e));
+      }
+      try {
+        const st = await loadState(svc, id);
+        setS(st);
+        if (st.ideas?.selectedId) setPicked(st.ideas.selectedId);
+      } catch (e) {
+        setErr(errMsg(e));
+      } finally {
+        setBusy("");
+      }
+    },
+    [svc, id],
+  );
 
-  const base = `/api/cases/${encodeURIComponent(id)}`;
-  useEffect(() => { call("load", base); }, [call, base]);
+  useEffect(() => {
+    run("load", async () => {});
+  }, [run]);
 
   if (!s) return <main className="wrap">{err ? <p className="err">{err}</p> : <p className="muted">불러오는 중…</p>}</main>;
 
@@ -84,16 +123,31 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
   const decide = (rowId: string, value: string) => {
     if (!name.trim()) { setErr("위쪽 '내 이름'을 먼저 적어 주세요 (확정 기록에 남습니다)"); return; }
     saveName(name);
-    call(`decide:${rowId}`, `${base}/decisions`, { rowId, value, by: name });
+    run(`decide:${rowId}`, () => svc.decide(id, rowId, value, name));
   };
 
   return (
     <main className="wrap">
-      <p className="small"><Link href="/console">← 케이스 목록</Link></p>
+      <p className="small row" style={{ justifyContent: "space-between" }}>
+        <a href={href("cases")}>← 케이스 목록</a>
+        <span className="row">
+          <button className="small" onClick={async () => downloadJson(`케이스_${id}.json`, await svc.exportCase(id))}>케이스 파일 내보내기</button>
+          <button
+            className="small"
+            onClick={async () => {
+              if (!confirm(`케이스 "${s.meta.company}"를 이 저장소에서 지웁니다. 되돌릴 수 없습니다. 먼저 내보내기를 권합니다.`)) return;
+              await svc.deleteCase(id);
+              go("cases");
+            }}
+          >
+            삭제
+          </button>
+        </span>
+      </p>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
         <div>
           <h1>{s.meta.company}</h1>
-          <span className="small muted">{s.meta.id} · 모델 {s.settings.model} · 합성 백엔드 {s.meta.backend}</span>
+          <span className="small muted">{s.meta.id} · {PROVIDER_LABEL[settings.llm.provider]} · 모델 {settings.llm.model} · 합성 백엔드 {s.meta.backend}</span>
         </div>
         <label className="small row">내 이름 <input type="text" style={{ width: 160 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => saveName(name)} /></label>
       </div>
@@ -125,7 +179,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
 
           <h2>브리프 (2부)</h2>
           <div className="row">
-            <button className="primary" disabled={locked || !!busy} onClick={() => call("brief", `${base}/brief`)}>
+            <button className="primary" disabled={locked || !!busy} onClick={() => run("brief", () => generateBrief(svc, id, generator(), settings))}>
               {busy === "brief" ? "브리프 작성 중… (1~2분)" : brief ? "브리프 다시 만들기" : "브리프 만들기"}
             </button>
             {brief && <span className="small muted">생성 {new Date(brief.generatedAt).toLocaleString("ko-KR")} · 목적 {brief.objectiveCategory}{brief.objectiveEstimated ? " (추정)" : ""} · 심의 {brief.reviewStatus} · 근거 {brief.evidenceStatus}</span>}
@@ -156,7 +210,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
 
           <h2>아이디어 3안</h2>
           <div className="row">
-            <button className="primary" disabled={locked || !brief || !!busy} onClick={() => call("ideas", `${base}/ideas`)}>
+            <button className="primary" disabled={locked || !brief || !!busy} onClick={() => run("ideas", () => generateIdeas(svc, id, generator()))}>
               {busy === "ideas" ? "아이디어 만드는 중… (1~2분)" : ideas ? "아이디어 다시 만들기" : "아이디어 만들기"}
             </button>
             <span className="small muted">확정한 브리프 값(핵심 메시지, CTA 등)이 있으면 반영됩니다.</span>
@@ -181,7 +235,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
         <div className="inner">
           <div className="small">
             {locked ? (
-              <strong className="okc">게이트 1 승인 완료 — 다음 단계(이미지)는 3단계에서 구현</strong>
+              <strong className="okc">게이트 1 승인 완료 — 다음 단계(이미지)는 MVP 3단계에서 구현</strong>
             ) : (
               <>
                 남은 확정 항목 <strong>{s.openCount ?? "-"}</strong>개 · 선택한 아이디어 <strong>{picked ? picked.replace("idea-", "") + "안" : "없음"}</strong>
@@ -195,7 +249,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
               <button
                 className="primary"
                 disabled={!!busy || !picked || !s.readiness.ok || !name.trim()}
-                onClick={() => { saveName(name); call("gate1", `${base}/gate1`, { ideaId: picked, approver: name, note }); }}
+                onClick={() => { saveName(name); run("gate1", () => svc.approveGate1(id, picked, name, note)); }}
                 title={!name.trim() ? "내 이름을 적어 주세요" : ""}
               >
                 게이트 1 승인

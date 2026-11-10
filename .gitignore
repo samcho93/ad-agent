@@ -7,5 +7,9 @@ next-env.d.ts
 .env.*
 !.env.example
 # 케이스 폴더에는 광고주 개인정보가 들어간다
-cases/
-cases-fake/
+/cases/
+/cases-fake/
+dist/
+
+# 원본 업무 문서: 공개 저장소에 올리지 않는다 (로컬에만 보관)
+docs/source/

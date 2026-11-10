@@ -25,6 +25,8 @@ export function stripReferences(text: string): string {
     .replace(/[12]\s*부(\s*답)?(\s*\d+\s*(,\s*\d+\s*)*번)?/g, " ")
     .replace(/\d+\s*번\s*(질문|답|항목)/g, " ")
     .replace(/방향\s*\d+/g, " ")
+    // 나이대("30대", "20~40대", "65세 이상")는 타깃 묘사이지 사실 주장이 아니다
+    .replace(/\d+\s*(?:[~∼\-]\s*\d+\s*)?(?:대|세)(?![가-힣]*(?:판매|선택|구매))/g, " ")
     .replace(/\d+\s*안(?=[\s.,):과와은는이가을를의에도]|$)/g, " ");
 }
 
@@ -89,7 +91,7 @@ export function visualTextHits(text: string): string[] {
     let idx = text.indexOf(w);
     while (idx >= 0) {
       const after = text.slice(idx, idx + w.length + 12);
-      const negated = /(없|넣지|빼|제외|비워|자리|공간|영역|얹)/.test(after);
+      const negated = /(없|않|넣지|말고|금지|빼|제외|비워|가려|자리|공간|영역|얹)/.test(after);
       if (!negated) {
         hits.push(w);
         break;

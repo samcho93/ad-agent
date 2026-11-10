@@ -1,13 +1,12 @@
 {
-  "_note": "미정 항목은 임의로 정하지 않는다. 값이 \"미정\"이면 화면과 문서에 그대로 표시한다. (docs/decisions.md)",
+  "_note": "기본값. 사용자가 설정 화면에서 바꾼 값은 각자 브라우저에 저장된다. 미정 항목은 임의로 정하지 않는다 (docs/decisions.md).",
   "llm": {
-    "backend": "claude-cli",
-    "cliPath": "claude",
+    "provider": "anthropic",
     "model": "claude-opus-5-5",
     "effort": "high",
-    "maxTokens": 32000
+    "maxTokens": 32000,
+    "bridgeUrl": "http://127.0.0.1:8787"
   },
-  "casesDir": "cases",
   "revision": {
     "includedCount": "미정",
     "includedCountRange": "1~3회"

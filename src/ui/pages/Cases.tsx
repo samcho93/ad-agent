@@ -1,0 +1,64 @@
+import { useEffect, useState } from "react";
+import type { CaseMeta } from "@/core/caseService";
+import { errMsg, go, href, pickJsonFile, useApp } from "../app";
+
+const STATUS: Record<string, string> = {
+  intake_done: "질문 수집 완료",
+  brief_draft: "브리프 초안",
+  ideas_draft: "아이디어 초안",
+  gate1_approved: "게이트 1 승인",
+};
+
+export function Cases() {
+  const { svc, store } = useApp();
+  const [cases, setCases] = useState<CaseMeta[] | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    svc.listCases().then(setCases, (e) => setErr(errMsg(e)));
+  }, [svc]);
+
+  async function importAnswer() {
+    setErr("");
+    try {
+      const meta = await svc.createCase(await pickJsonFile());
+      go("cases", meta.id);
+    } catch (e) {
+      setErr(errMsg(e));
+    }
+  }
+  async function importCase() {
+    setErr("");
+    try {
+      const meta = await svc.importCase(await pickJsonFile());
+      go("cases", meta.id);
+    } catch (e) {
+      setErr(errMsg(e));
+    }
+  }
+
+  return (
+    <main className="wrap stack">
+      <h1>케이스</h1>
+      <p className="small muted">저장 위치: {store.label}</p>
+      <div className="row">
+        <a href={href("intake")}><button className="primary">새 질문지</button></a>
+        <button onClick={importAnswer}>광고주 답변 파일 가져오기</button>
+        <button onClick={importCase}>케이스 파일 가져오기</button>
+      </div>
+      {err && <p className="err card">{err}</p>}
+      {cases === null && !err && <p className="muted">불러오는 중…</p>}
+      {cases?.length === 0 && <p className="muted">아직 케이스가 없습니다.</p>}
+      {cases?.map((c) => (
+        <a key={c.id} href={href("cases", c.id)} style={{ textDecoration: "none", color: "inherit" }}>
+          <div className="card row" style={{ justifyContent: "space-between" }}>
+            <div>
+              <strong>{c.company}</strong> <span className="small muted">{c.id}</span>
+            </div>
+            <span className="small">{STATUS[c.status] ?? c.status}</span>
+          </div>
+        </a>
+      ))}
+    </main>
+  );
+}

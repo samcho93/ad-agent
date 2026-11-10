@@ -6,16 +6,8 @@ import { bannedHits, factIssues, unsupportedNumbers, unsupportedKoreanQuantities
 import intakeFixture from "./fixtures/cookie-intake.json";
 import { goodBrief, goodIdeas } from "@/llm/fake";
 
-const settings = {
-  llm: { backend: "claude-cli" as const, model: "x", effort: "high" as const, maxTokens: 1000 },
-  casesDir: "cases",
-  revision: { includedCount: "미정", includedCountRange: "1~3회" },
-  pricing: "미정",
-  privacyRetention: "미정",
-  imageModel: "미정",
-  defaultVariants: 2,
-  composeBackend: "html",
-};
+import { DEFAULT_SETTINGS } from "@/core/settings";
+const settings = DEFAULT_SETTINGS;
 
 describe("검증기", () => {
   it("1부에 없는 숫자를 찾는다", () => {
@@ -37,6 +29,8 @@ describe("검증기", () => {
     expect(factIssues("tone", tone, corpus, ["최고", "무첨가"], { copy: false })).toEqual([]);
     // 광고 문구에 쓰면 위반이다
     expect(factIssues("cta", "동네 최고 쿠키", corpus, ["최고", "무첨가"]).some((i) => i.severity === "error")).toBe(true);
+    // 나이대는 타깃 묘사다 (2026-11-10 브리지 실행에서 나온 오탐)
+    expect(unsupportedNumbers("동네에 사는 20~40대, 30대 부모, 65세 이상", corpus)).toEqual([]);
     // 진짜 지어낸 숫자는 여전히 잡는다
     expect(unsupportedNumbers("누적 판매 1만 개 (방향 2)", corpus)).toEqual(["1"]);
   });
@@ -46,6 +40,8 @@ describe("검증기", () => {
   it("이미지 묘사의 글자·로고를 찾되 '없이'는 허용한다", () => {
     expect(visualTextHits("가게 간판이 보이는 골목")).toEqual(["간판"]);
     expect(visualTextHits("글자와 로고 없이 쿠키만, 위쪽에 문구 자리를 비워 둠")).toEqual([]);
+    expect(visualTextHits("골목 끝 가게 입구, 간판이나 글자가 보이지 않게 비스듬히")).toEqual([]);
+    expect(visualTextHits("포장지에 브랜드 로고가 크게 보이는 정면 컷")).toEqual(["로고"]);
   });
   it("심의 업종 키워드", () => {
     expect(reviewIndustryHits("피부과 시술 상담")).toEqual(["의료"]);

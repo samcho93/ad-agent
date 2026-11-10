@@ -1,7 +1,6 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { IntakeSchema } from "@/core/intake";
+import { downloadJson, errMsg, go, useApp } from "../app";
 import { QUESTIONS, OBJECTIVES, ASSET_OPTIONS, CHANNEL_OPTIONS, UNKNOWN_LABEL } from "@/core/intake";
 
 type Form = {
@@ -33,8 +32,13 @@ const empty: Form = {
   },
 };
 
+/** 광고주 모드(#/intake?mode=client): 저장소 없이 답변 파일만 내려받아 담당자에게 보낸다 */
+const isClientMode = () => new URLSearchParams(location.hash.split("?")[1] ?? "").get("mode") === "client";
+
 export default function IntakePage() {
-  const router = useRouter();
+  const { svc } = useApp();
+  const clientMode = isClientMode();
+  const [done, setDone] = useState(false);
   const [f, setF] = useState<Form>(empty);
   const [step, setStep] = useState(0); // 0 = 고지·동의, 1..12 = 질문 0..11, 13 = 확인
   const [busy, setBusy] = useState(false);
@@ -79,9 +83,7 @@ export default function IntakePage() {
       d.a[key] = next;
     });
 
-  async function submit() {
-    setBusy(true);
-    setErr("");
+  function buildIntake() {
     const now = new Date().toISOString();
     const a = f.a;
     const body = {
@@ -103,15 +105,40 @@ export default function IntakePage() {
         "11": { channels: a.u11 ? [] : a[11], unknown: a.u11 },
       },
     };
+    return body;
+  }
+
+  /** 담당자: 이 PC 저장소에 케이스로 저장 */
+  async function saveHere() {
+    setBusy(true);
+    setErr("");
     try {
-      const res = await fetch("/api/cases", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "제출 실패");
-      router.push("/intake/done");
+      const meta = await svc.createCase(buildIntake());
+      go("cases", meta.id);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "제출 실패");
+      setErr(errMsg(e));
       setBusy(false);
     }
+  }
+
+  /** 광고주: 답변 파일로 내려받아 담당자에게 보낸다 (서버로 보내지 않음) */
+  function downloadAnswer() {
+    setErr("");
+    const parsed = IntakeSchema.safeParse(buildIntake());
+    if (!parsed.success) return setErr("빠진 답이 있어요. 이전으로 돌아가 확인해 주세요.");
+    const name = f.contact.company.replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 30) || "answer";
+    downloadJson(`질문지답변_${name}.json`, parsed.data);
+    setDone(true);
+  }
+
+  if (done) {
+    return (
+      <main className="narrow stack">
+        <h1>답변 파일을 저장했어요</h1>
+        <p>내려받은 파일(<code>질문지답변_….json</code>)을 담당자에게 메신저나 메일로 보내 주세요.</p>
+        <p className="small muted">입력하신 내용은 어디에도 전송되지 않았고, 이 파일에만 들어 있어요.</p>
+      </main>
+    );
   }
 
   return (
@@ -206,7 +233,7 @@ export default function IntakePage() {
 
       {step === 13 && (
         <div className="stack">
-          <h1>이대로 보낼까요?</h1>
+          <h1>{clientMode ? "이대로 저장할까요?" : "이대로 케이스를 만들까요?"}</h1>
           <div className="card small stack">
             <p><strong>{f.contact.company}</strong> · {f.contact.contactName}</p>
             {QUESTIONS.slice(1).map((qq) => {
@@ -224,7 +251,14 @@ export default function IntakePage() {
           {step < 13 ? (
             <button className="primary" onClick={() => setStep((s) => s + 1)} disabled={!canNext()}>다음</button>
           ) : (
-            <button className="primary" onClick={submit} disabled={busy}>{busy ? "보내는 중…" : "보내기"}</button>
+            clientMode ? (
+              <button className="primary" onClick={downloadAnswer}>답변 파일 내려받기</button>
+            ) : (
+              <span className="row">
+                <button onClick={downloadAnswer} disabled={busy}>파일로 내려받기</button>
+                <button className="primary" onClick={saveHere} disabled={busy}>{busy ? "저장 중…" : "이 PC에 케이스로 저장"}</button>
+              </span>
+            )
           )}
         </div>
       </div>
