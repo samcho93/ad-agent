@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import type { CaseMeta, CaseService, Gate1Readiness } from "@/core/caseService";
 import type { BriefDoc } from "@/core/brief";
 import type { IdeasDoc } from "@/core/ideas";
@@ -234,32 +234,54 @@ export default function CasePage({ id }: { id: string }) {
 
       <div className="bottombar">
         <div className="inner">
-          <div className="small">
-            {locked ? (
-              <strong className="okc">게이트 1 승인 완료 — 다음 단계(이미지)는 MVP 3단계에서 구현</strong>
-            ) : (
-              <>
-                남은 확정 항목 <strong>{s.openCount ?? "-"}</strong>개 · 선택한 아이디어 <strong>{picked ? picked.replace("idea-", "") + "안" : "없음"}</strong>
-                {s.readiness.blockers.length > 0 && <div className="muted">{s.readiness.blockers.join(" · ")}</div>}
-              </>
-            )}
-          </div>
-          {!locked && (
-            <div className="row">
-              <input type="text" placeholder="승인 메모 (선택)" style={{ width: 220 }} value={note} onChange={(e) => setNote(e.target.value)} />
-              <button
-                className="primary"
-                disabled={!!busy || !picked || !s.readiness.ok || !name.trim()}
-                onClick={() => { saveName(name); run("gate1", () => svc.approveGate1(id, picked, name, note)); }}
-                title={!name.trim() ? "내 이름을 적어 주세요" : ""}
-              >
-                게이트 1 승인
-              </button>
-            </div>
+          {locked ? (
+            <strong className="small okc">게이트 1 승인 완료 — 다음 단계(이미지)는 MVP 3단계에서 구현</strong>
+          ) : (
+            <>
+              <Gate1Checks
+                openCount={s.openCount}
+                firstOpenId={brief?.checklist.find((c) => !brief.decisions[c.id])?.id}
+                picked={picked}
+                hasIdeas={!!ideas}
+                name={name}
+                otherBlockers={s.readiness.blockers.filter((b) => !b.startsWith("확정하지 않은 항목") && !b.startsWith("브리프가 없습니다") && !b.startsWith("아이디어 3안이 없습니다"))}
+              />
+              <div className="row">
+                <input type="text" placeholder="승인자 이름 (필수)" style={{ width: 150 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => saveName(name)} />
+                <input type="text" placeholder="승인 메모 (선택)" style={{ width: 180 }} value={note} onChange={(e) => setNote(e.target.value)} />
+                <button
+                  className="primary"
+                  disabled={!!busy || !picked || !s.readiness.ok || !name.trim()}
+                  onClick={() => { saveName(name); run("gate1", () => svc.approveGate1(id, picked, name, note)); }}
+                >
+                  게이트 1 승인
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
     </main>
+  );
+}
+
+/** 게이트 1 승인 조건을 하나씩 보여 준다. 버튼이 왜 꺼져 있는지 바로 알 수 있게 */
+function Gate1Checks({ openCount, firstOpenId, picked, hasIdeas, name, otherBlockers }: {
+  openCount: number | null; firstOpenId?: string; picked: string; hasIdeas: boolean; name: string; otherBlockers: string[];
+}) {
+  const item = (ok: boolean, text: React.ReactNode) => (
+    <span className={ok ? "okc" : "warn"} style={{ marginRight: 12, whiteSpace: "nowrap" }}>{ok ? "✓" : "✗"} {text}</span>
+  );
+  return (
+    <div className="small" style={{ lineHeight: 1.9 }}>
+      <b>게이트 1 승인 조건</b>{" "}
+      {item(openCount === 0, openCount === null ? "브리프 만들기" : openCount === 0 ? "확정 항목 모두 처리" : (
+        <>확정 항목 {openCount}개 남음{firstOpenId && <> (<a href={`#check-${firstOpenId}`} onClick={(e) => { e.preventDefault(); document.getElementById(`check-${firstOpenId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>첫 항목으로</a>)</>}</>
+      ))}
+      {item(!!picked, !hasIdeas ? "아이디어 만들기" : picked ? `${picked.replace("idea-", "")}안 선택` : "아이디어 카드에서 1안 고르기")}
+      {item(!!name.trim(), name.trim() ? "승인자 이름" : "승인자 이름 입력")}
+      {otherBlockers.map((b) => <div key={b} className="warn">✗ {b}</div>)}
+    </div>
   );
 }
 
@@ -288,7 +310,7 @@ function CheckItem({ row, reasons, decided, locked, busy, onDecide }: {
   const [custom, setCustom] = useState("");
   const options = row.candidates?.length ? row.candidates : [row.content];
   return (
-    <div className={`card check ${decided ? "closed" : "open"}`}>
+    <div id={`check-${row.id}`} className={`card check ${decided ? "closed" : "open"}`}>
       <div className="row" style={{ justifyContent: "space-between" }}>
         <strong>{row.label}</strong>
         <span className="small">{reasons.map((x) => <span key={x} className={`tag ${x.startsWith("검증 오류") ? "estimate" : x === "사용자 결정" ? "user" : x === "추정" ? "estimate" : "ai"}`}>{x}</span>)}</span>
