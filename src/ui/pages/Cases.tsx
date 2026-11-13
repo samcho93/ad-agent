@@ -36,7 +36,8 @@ export function Cases() {
   async function importCase() {
     setErr("");
     try {
-      const meta = await svc.importCase(await pickJsonFile());
+      const meta = await svc.importCase(await pickJsonFile(80));
+      if (meta.skipped.length) alert(`케이스를 가져왔습니다. 케이스 파일이 아닌 ${meta.skipped.length}개는 건너뛰었습니다:\n${meta.skipped.slice(0, 10).join("\n")}`);
       go("cases", meta.id);
     } catch (e) {
       setErr(errMsg(e));

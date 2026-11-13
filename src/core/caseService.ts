@@ -302,6 +302,7 @@ export class CaseService {
     const files: Record<string, string> = {};
     const binaries: Record<string, { type: string; base64: string }> = {};
     for (const name of await this.store.listFiles(id)) {
+      if (!isValidFileName(name)) continue; // 케이스 파일이 아닌 것은 넣지 않는다
       if (isBinaryName(name)) {
         const b = await this.store.readBlob(id, name);
         if (b) binaries[name] = { type: b.type || "application/octet-stream", base64: await blobToBase64(b) };
@@ -313,31 +314,37 @@ export class CaseService {
     return { format: "ad-agent-case", version: 1, exportedAt: new Date().toISOString(), caseId: id, files, binaries };
   }
 
-  /** 받은 케이스 파일을 가져온다. 같은 id가 있으면 새 id를 붙인다 */
-  async importCase(raw: unknown): Promise<CaseMeta> {
+  /**
+   * 받은 케이스 파일을 가져온다. 같은 id가 있으면 새 id를 붙인다.
+   * 케이스 파일이 아닌 것(이름 규칙에 맞지 않는 파일, 이미지가 아닌 바이너리)은 쓰지 않고 건너뛰어 skipped 로 알려 준다.
+   * (예전 버전은 PC 폴더 저장소에서 폴더 안의 다른 파일까지 내보내기에 넣었다)
+   */
+  async importCase(raw: unknown): Promise<CaseMeta & { skipped: string[] }> {
     const b = raw as Partial<CaseBundle>;
     if (!b || b.format !== "ad-agent-case" || b.version !== 1 || typeof b.files !== "object" || !b.files) {
       throw new CaseError("케이스 파일 형식이 아닙니다");
     }
-    const files = b.files as Record<string, unknown>;
-    for (const [name, content] of Object.entries(files)) {
-      if (!isValidFileName(name) || typeof content !== "string") throw new CaseError(`잘못된 파일: ${name}`);
+    const skipped: string[] = [];
+    const files: Record<string, string> = {};
+    for (const [name, content] of Object.entries(b.files as Record<string, unknown>)) {
+      if (isValidFileName(name) && typeof content === "string") files[name] = content;
+      else skipped.push(name);
     }
-    const binaries = (b.binaries ?? {}) as Record<string, { type?: unknown; base64?: unknown }>;
-    for (const [name, v] of Object.entries(binaries)) {
-      if (!isValidFileName(name) || !isBinaryName(name) || typeof v?.base64 !== "string" || typeof v?.type !== "string" || !/^image\//.test(v.type)) {
-        throw new CaseError(`잘못된 파일: ${name}`);
-      }
+    const binaries: Record<string, { type: string; base64: string }> = {};
+    for (const [name, v] of Object.entries((b.binaries ?? {}) as Record<string, { type?: unknown; base64?: unknown }>)) {
+      if (isValidFileName(name) && isBinaryName(name) && typeof v?.base64 === "string" && typeof v?.type === "string" && /^image\//.test(v.type)) {
+        binaries[name] = { type: v.type, base64: v.base64 };
+      } else skipped.push(name);
     }
     if (typeof files["00_case.json"] !== "string" || typeof files["01_intake.json"] !== "string") throw new CaseError("필수 파일(00_case.json, 01_intake.json)이 없습니다");
     const meta = JSON.parse(files["00_case.json"] as string) as CaseMeta;
     IntakeSchema.parse(JSON.parse(files["01_intake.json"] as string)); // 형식 검사
     const id = await this.freeId(CASE_ID_RE.test(meta.id) ? meta.id : `${slug(meta.company ?? "case")}_${ymd()}`);
     meta.id = id;
-    for (const [name, content] of Object.entries(files)) if (name !== "00_case.json") await this.store.write(id, name, content as string);
-    for (const [name, v] of Object.entries(binaries)) await this.store.writeBlob(id, name, base64ToBlob(v.base64 as string, v.type as string));
+    for (const [name, content] of Object.entries(files)) if (name !== "00_case.json") await this.store.write(id, name, content);
+    for (const [name, v] of Object.entries(binaries)) await this.store.writeBlob(id, name, base64ToBlob(v.base64, v.type));
     await this.store.write(id, "00_case.json", json(meta));
-    return meta;
+    return { ...meta, skipped };
   }
 
   async deleteCase(id: string) {

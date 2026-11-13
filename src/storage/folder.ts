@@ -1,4 +1,4 @@
-import { type CaseStore, CASE_ID_RE, SUBDIRS, assertFileName } from "./types";
+import { type CaseStore, CASE_ID_RE, SUBDIRS, assertFileName, isValidFileName } from "./types";
 import { kv } from "./idb";
 
 /**
@@ -68,13 +68,14 @@ export class FolderStore implements CaseStore {
     const dir = await this.caseDir(caseId, false);
     const out: string[] = [];
     if (!dir) return out;
+    // 케이스가 쓴 파일만 (사용자가 폴더에 넣어 둔 내보내기 파일, desktop.ini 등은 케이스 파일이 아님)
     for await (const h of dir.values?.() ?? []) {
       if (h.kind === "file") out.push(h.name);
       else if ((SUBDIRS as readonly string[]).includes(h.name)) {
         for await (const f of (h as DirHandle).values?.() ?? []) if (f.kind === "file") out.push(`${h.name}/${f.name}`);
       }
     }
-    return out;
+    return out.filter(isValidFileName);
   }
   /** "04_images/a.png" → (04_images 폴더 핸들, "a.png") */
   private async locate(caseId: string, name: string, create: boolean): Promise<[FileSystemDirectoryHandle, string] | null> {

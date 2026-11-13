@@ -149,8 +149,21 @@ describe("케이스 내보내기·가져오기", () => {
     expect(again.id).toBe(`${meta.id}-2`);
   });
 
-  it("경로 조작이나 형식이 다른 파일은 거부한다", async () => {
-    await expect(svc.importCase({ format: "ad-agent-case", version: 1, files: { "../x": "a" } })).rejects.toThrow(/잘못된 파일/);
+  it("형식이 다르면 거부하고, 경로 조작·케이스가 아닌 파일은 쓰지 않고 건너뛴다", async () => {
     await expect(svc.importCase({ hello: 1 })).rejects.toThrow(/형식/);
+    await expect(svc.importCase({ format: "ad-agent-case", version: 1, files: { "../x": "a" } })).rejects.toThrow(/필수 파일/);
+
+    // 예전 PC 폴더 저장소 내보내기: 케이스 폴더에 넣어 둔 내보내기 파일·desktop.ini 까지 들어 있던 경우
+    const meta = await svc.createCase(intakeFixture);
+    const bundle = await svc.exportCase(meta.id);
+    bundle.files["케이스_한국폴리텍대학-분당융합기술교육원_20261110.json"] = "{}";
+    bundle.files["../../evil.txt"] = "x";
+    bundle.binaries = { ...(bundle.binaries ?? {}), "assets/a.exe": { type: "application/octet-stream", base64: "AAAA" } };
+    const store2 = new MemoryStore();
+    const other = new CaseService(store2, () => DEFAULT_SETTINGS);
+    const imported = await other.importCase(bundle);
+    expect(imported.skipped.sort()).toEqual(["../../evil.txt", "assets/a.exe", "케이스_한국폴리텍대학-분당융합기술교육원_20261110.json"].sort());
+    expect((await store2.listFiles(imported.id)).some((f) => /evil|케이스_|exe/.test(f))).toBe(false);
+    expect(await other.getIntake(imported.id)).toBeTruthy();
   });
 });
