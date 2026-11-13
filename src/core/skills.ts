@@ -6,6 +6,7 @@ import adIdeation from "../../.claude/skills/ad-ideation/SKILL.md?raw";
 import adIntake from "../../.claude/skills/ad-intake/SKILL.md?raw";
 import adImageRouter from "../../.claude/skills/ad-image-router/SKILL.md?raw";
 import adQa from "../../.claude/skills/ad-qa/SKILL.md?raw";
+import adRevise from "../../.claude/skills/ad-revise/SKILL.md?raw";
 
 const SKILLS: Record<string, string> = {
   "ad-brief": adBrief,
@@ -13,6 +14,7 @@ const SKILLS: Record<string, string> = {
   "ad-intake": adIntake,
   "ad-image-router": adImageRouter,
   "ad-qa": adQa,
+  "ad-revise": adRevise,
 };
 
 export function readSkill(name: keyof typeof SKILLS | string): string {

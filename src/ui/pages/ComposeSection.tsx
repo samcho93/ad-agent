@@ -6,6 +6,7 @@ import { loadFonts } from "@/render/fonts";
 import { canvasToPng, loadComposeSources, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
 import { reached, type CaseStatus } from "@/core/caseService";
 import { errMsg, useApp } from "../app";
+import { RevisionAssist } from "./RevisionAssist";
 
 const VARIANTS: Variant[] = ["A", "B"];
 
@@ -137,6 +138,7 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
   return (
     <div className="stack">
       {locked && <p className="small muted" style={{ margin: 0 }}>게이트 2를 통과해 잠겼습니다. 바꾸려면 아래 납품 단계에서 수정 요청을 기록하세요.</p>}
+      <RevisionAssist caseId={caseId} doc={doc} locked={locked} onApply={(d) => { setDoc(d); setDirty(true); }} />
       <div className="row small">
         {SIZES.map((s) => (
           <button key={s} className={size === s ? "primary" : ""} onClick={() => setSize(s)}>{SIZE_LABEL[s]}</button>

@@ -125,7 +125,23 @@ export function goodQa(textOn: string[] = []) {
   };
 }
 
+/** 수정안 응답: 글자 후보 2개 + 버튼 색·제품 크기 제안 + 범위 밖 제안 1개 (코드가 버림) */
+export function goodRevision() {
+  return {
+    copyOptions: [
+      { variant: "A" as const, lead: "매일 아침 굽는", headline: "버터 100%,\n그날 구운 것만", sub: "매일 아침 직접 굽는 수제 쿠키", cta: "단체 주문 문의", reason: "헤드라인을 뜻 단위로 두 줄로 나눠 짧게 보이게 함" },
+      { variant: "A" as const, lead: "", headline: "그날 구운 쿠키만", sub: "매일 아침 직접 굽는 수제 쿠키", cta: "단체 주문 문의", reason: "헤드라인을 더 짧게 줄임" },
+    ],
+    layoutSuggestions: [
+      { field: "buttonBg" as const, variant: "A" as const, value: "#3a8f3a", reason: "버튼을 더 눈에 띄게" },
+      { field: "productScale" as const, variant: "공통" as const, value: "0.9", reason: "제품과 문구가 덜 겹치게" },
+      { field: "overlay" as const, variant: "공통" as const, value: "1.5", reason: "배경을 어둡게" },
+    ],
+    needsHuman: "",
+  };
+}
+
 /** 가짜 모드(npm run dev:fake) 화면 시험용 */
 export function devFakeGenerator(): Generator {
-  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()], qa: [goodQa(["B_1200x628.png"])] });
+  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()], qa: [goodQa(["B_1200x628.png"])], revision: [goodRevision()] });
 }
