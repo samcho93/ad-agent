@@ -235,6 +235,8 @@ npm test           # API 호출 없는 테스트
 npm run typecheck
 npm run build      # dist/ (배포본에는 CSP가 들어간다)
 ```
+화면 제목 옆의 `v<버전> · <빌드 시각> · <커밋>` 으로 지금 보고 있는 빌드를 알 수 있습니다 (빌드할 때마다 바뀜, `*` 는 커밋하지 않은 변경이 있는 빌드). 기능을 더해 배포할 때 `package.json` 의 버전을 올립니다.
+
 배포는 두 곳입니다. 빌드는 상대 경로(`base: "./"`)라 어느 주소 아래에 올려도 동작합니다 (SamStudy 허브 `irodmas.com/<강좌>/` 포함).
 - **Cloudflare Pages** (`wrangler.toml`, 프로젝트 `ad-agent`): `npm run deploy:cf` (= `vite build --mode cloudflare` 후 `wrangler pages deploy dist`). Pages 는 파일 하나가 25MiB 까지라, 누끼용 ONNX 런타임 wasm(25.6MiB)만 jsDelivr 의 같은 버전(바이트 동일)에서 받습니다.
 - **GitHub Pages**: `main` 에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드 후 올립니다.

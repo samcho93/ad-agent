@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 
 /**
  * 누끼(Transformers.js)가 쓰는 ONNX 런타임 파일을 이 사이트에서 직접 제공한다.
@@ -70,13 +71,31 @@ function csp(extraConnect: string[]): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+/**
+ * 화면 제목 옆에 보여 줄 빌드 정보 (빌드할 때마다 바뀐다).
+ * 버전은 package.json, 빌드 시각은 한국 시각, 커밋은 git (커밋 안 한 변경이 있으면 *).
+ */
+function buildInfo() {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "package.json"), "utf8")) as { version: string };
+  let commit = (process.env.GITHUB_SHA ?? "").slice(0, 7);
+  try {
+    commit = execSync("git rev-parse --short HEAD", { cwd: import.meta.dirname }).toString().trim();
+    if (execSync("git status --porcelain", { cwd: import.meta.dirname }).toString().trim()) commit += "*";
+  } catch {
+    /* git 이 없으면 비워 둔다 */
+  }
+  const kst = new Date(Date.now() + 9 * 3600 * 1000).toISOString();
+  return { version: pkg.version, builtAt: `${kst.slice(0, 10)} ${kst.slice(11, 16)}`, commit };
+}
+
+export default defineConfig(({ mode, command }) => {
   const ortCdn = ortCdnFor(mode);
+  const info = command === "build" ? buildInfo() : { ...buildInfo(), builtAt: "개발 서버" };
   return {
     // 기본은 상대 경로: Cloudflare Pages(루트), GitHub Pages(/ad-agent/), irodmas.com/<강좌>/ 어디에 올려도 동작한다 (해시 라우터라 페이지는 index.html 하나)
     base: process.env.BASE_PATH ?? "./",
     plugins: [react(), csp(ortCdn ? ["https://cdn.jsdelivr.net"] : []), ortFiles(ortCdn)],
-    define: { __ORT_WASM_BASE__: JSON.stringify(ortCdn) },
+    define: { __ORT_WASM_BASE__: JSON.stringify(ortCdn), __BUILD_INFO__: JSON.stringify(info) },
     resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
     server: { port: 5173, strictPort: true },
     build: { outDir: "dist", sourcemap: false },

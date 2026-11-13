@@ -11,6 +11,7 @@ import { ProofPage } from "./ui/pages/ProofPage";
 import { HelpPage } from "./ui/pages/Help";
 import { PROVIDER_LABEL } from "./llm/select";
 import { currentModel } from "./core/settings";
+import { buildLabel } from "./buildInfo";
 
 function Nav({ route }: { route: string[] }) {
   const { settings, store } = useApp();
@@ -18,6 +19,7 @@ function Nav({ route }: { route: string[] }) {
   return (
     <nav className="topnav">
       <a href={href()} className={on("")}><strong>광고 시안 에이전트</strong></a>
+      <span className="small muted" title="버전 · 빌드 시각(한국) · 커밋">{buildLabel()}</span>
       <a href={href("intake")} className={on("intake")}>질문지</a>
       <a href={href("cases")} className={on("cases")}>케이스</a>
       <a href={href("settings")} className={on("settings")}>설정</a>
