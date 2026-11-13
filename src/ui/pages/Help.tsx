@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 // 도움말의 단일 원본은 저장소의 README.md 다 (GitHub와 앱에서 같은 내용)
 import readme from "../../../README.md?raw";
-import { buildLabel } from "@/buildInfo";
+import { buildDetail } from "@/buildInfo";
 
 /** 도움말: 이 에이전트를 어떻게 쓰고, 어떻게 구성했고, 어떻게 만들었는지 */
 export function HelpPage() {
@@ -40,7 +40,7 @@ export function HelpPage() {
             </li>
           ))}
         </ol>
-        <div className="muted">이 화면: {buildLabel()}</div>
+        <div className="muted">이 화면: {buildDetail()}</div>
         <span className="muted">
           같은 내용: <a href="https://github.com/samcho93/ad-agent#readme" target="_blank" rel="noopener noreferrer">GitHub README</a>
         </span>
