@@ -5,6 +5,7 @@ import { PROVIDER_LABEL, SECRET_FOR, checkConnection } from "@/llm/select";
 import { folderSupported, forgetFolder, pickFolder } from "@/storage/folder";
 import { clearSecrets, isEncrypted } from "@/storage/prefs";
 import { errMsg, useApp } from "../app";
+import { ProductRulesEditor } from "./ProductRulesEditor";
 
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const KEY_PROVIDERS: ModelProvider[] = ["anthropic", "openai", "gemini"];
@@ -56,6 +57,8 @@ export function SettingsPage() {
     try {
       const s: Settings = {
         ...draft,
+        // 이름·키워드가 없는 규칙은 쓰이지 않으므로 저장하지 않는다
+        productRules: draft.productRules.filter((r) => r.name.trim() && r.keywords.length > 0),
         llm: { ...draft.llm, bridgeUrl: provider === "bridge" ? normalizeBridgeUrl(draft.llm.bridgeUrl) : draft.llm.bridgeUrl },
       };
       await app.updateSettings(s);
@@ -257,6 +260,8 @@ export function SettingsPage() {
         )}
         <p className="small muted">브라우저 저장소는 브라우저 데이터를 지우면 함께 지워집니다. 중요한 케이스는 내보내기로 백업하세요.</p>
       </div>
+
+      <ProductRulesEditor rules={draft.productRules} onChange={(r) => setDraft((d) => ({ ...d, productRules: r }))} />
 
       <div className="card small stack">
         <h3>미정 항목 (운영 결정 전)</h3>

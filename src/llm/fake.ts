@@ -102,6 +102,9 @@ export function goodImagePrompt() {
     promptKo: "이른 아침 햇살이 드는 나무 작업대, 식힘망과 버터 접시, 흩어진 밀가루, 부드러운 그림자, 따뜻한 베이지·갈색 톤",
     copySpace: "위" as const,
     aspect: "1:1" as const,
+    productPlacementEn:
+      "Eye-level camera tilted about 15 degrees downward; keep an empty spot on the lower center of the workbench where a product about 45% of the frame height will be placed; soft morning light from the left.",
+    referenceGuideKo: "제품 사진처럼 눈높이에서 약간 내려다보는 각도, 제품이 화면 높이의 약 45%를 차지하도록 아래 가운데를 비워 두고, 빛은 왼쪽에서 들어오게 합니다.",
   };
 }
 

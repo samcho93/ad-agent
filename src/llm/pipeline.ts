@@ -1,3 +1,4 @@
+import { matchRule, ruleForPrompt } from "@/core/productRules";
 import { readSkill } from "@/core/skills";
 import type { Settings } from "@/core/settings";
 import { intakeForModel, unknownQuestions, bannedPhrases } from "@/core/intake";
@@ -87,7 +88,10 @@ export async function generateIdeas(svc: CaseService, caseId: string, gen: Gener
     "<광고주_자료>",
     intakeForModel(intake),
     "</광고주_자료>",
-  ].join("\n");
+    ruleForPrompt(matchRule(svc.currentSettings.productRules, intake)),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   let ideas: IdeasDoc | null = null;
   let extra = "";

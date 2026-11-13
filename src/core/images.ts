@@ -50,19 +50,44 @@ export function routeFromDecision(text: string, hasProduct: boolean): ImageRoute
   return /실제 (매장|공간)|실제 사진|매장·공간 사진/.test(text) ? "intangible_photo" : "intangible_ai";
 }
 
-export function buildPolicy(intake: Intake, brief: BriefDoc, assets: Asset[]): ImagePolicy {
+/** 이미지 단계에서 사람이 바꾼 경로 (브리프는 게이트 1 뒤 잠기므로 여기 따로 남긴다) */
+export interface RouteOverride {
+  route: ImageRoute;
+  by: string;
+  at: string;
+  note: string;
+}
+
+/** 제품 사진 상태별로 고를 수 있는 경로 */
+export const PHOTO_ROUTES: Record<"product" | "intangible", { route: ImageRoute; label: string }[]> = {
+  product: [
+    { route: "product_cutout", label: "제품 사진 있음 → 누끼 (기본, 가장 안전)" },
+    { route: "product_regenerate", label: "제품 사진 있음 → 원본 기반 재생성 (나란히 비교 검수)" },
+    { route: "product_need_photo", label: "광고주에게 제품 사진 요청 중" },
+  ],
+  intangible: [
+    { route: "intangible_ai", label: "공간·사람·상황 이미지 생성" },
+    { route: "intangible_photo", label: "실제 매장·공간 사진 사용" },
+  ],
+};
+
+export function buildPolicy(intake: Intake, brief: BriefDoc, assets: Asset[], override?: RouteOverride | null): ImagePolicy {
   const decided = brief.decisions.imagePolicy?.value ?? "";
   const hasProduct = brief.hasProduct;
-  let route = routeFromDecision(decided, hasProduct);
+  let route = override?.route ?? routeFromDecision(decided, hasProduct);
   const productPhotos = assets.filter((a) => a.kind === "product");
   const shopPhotos = assets.filter((a) => a.kind === "shop");
   const medical = reviewIndustryHits(intakeCorpus(intake)).includes("의료");
   const blockers: string[] = [];
   const clientRequests: string[] = [];
 
-  if (!decided) blockers.push("브리프의 '이미지 사용 방침'이 확정되지 않았습니다");
+  if (!decided && !override) blockers.push("브리프의 '이미지 사용 방침'이 확정되지 않았습니다");
   if (route === "product_need_photo") {
-    blockers.push("제품형인데 제품 사진이 없습니다. 광고주에게 사진을 요청하세요 (AI로 제품을 새로 그리지 않습니다)");
+    blockers.push(
+      productPhotos.length
+        ? "제품 사진을 받았습니다. 위 '제품 사진 상태'에서 누끼(또는 재생성) 경로로 바꾸면 이어서 진행됩니다"
+        : "광고주에게 제품 사진을 요청 중입니다. 사진을 받으면 '자료'에 올리고 '제품 사진 상태'를 바꾸세요 (AI로 제품을 새로 그리지 않습니다)",
+    );
     clientRequests.push("제품 사진 (정면, 비스듬한 각도, 가능하면 밝은 단색 배경)");
   }
   if ((route === "product_cutout" || route === "product_regenerate") && productPhotos.length === 0) {
@@ -89,7 +114,11 @@ export function buildPolicy(intake: Intake, brief: BriefDoc, assets: Asset[]): I
 
   return {
     route,
-    reason: decided ? `브리프에서 확정한 이미지 사용 방침: "${decided}"` : "이미지 사용 방침 미확정",
+    reason: override
+      ? `이미지 단계에서 바꿈 (${override.by}, ${override.at.slice(0, 10)}): ${ROUTE_LABEL[override.route]}${override.note ? `. ${override.note}` : ""}${decided ? ` / 브리프 확정값: "${decided}"` : ""}`
+      : decided
+        ? `브리프에서 확정한 이미지 사용 방침: "${decided}"`
+        : "이미지 사용 방침 미확정",
     medical,
     review: brief.reviewStatus,
     clientRequests,
@@ -141,6 +170,14 @@ export interface Asset {
 }
 
 export type ImageSource = "figma" | "upload" | "cutout";
+
+/** 이미지를 만든 방법 (기록용). 제품 사진을 참조로 넣어 배경을 만들면 각도·빛이 맞아 자연스럽다 */
+export type ImageMethod = "prompt" | "product_reference" | "photo";
+export const IMAGE_METHOD_LABEL: Record<ImageMethod, string> = {
+  prompt: "프롬프트만으로 생성",
+  product_reference: "제품 사진을 참조 이미지로 넣어 생성",
+  photo: "실제 사진 (생성 아님)",
+};
 export type ImageStatus = "candidate" | "picked" | "discarded";
 
 export interface ImageItem {
@@ -153,6 +190,9 @@ export interface ImageItem {
   promptId?: string;
   figma?: { fileKey: string; nodeId: string };
   fromAssetId?: string; // 누끼의 원본 사진
+  /** 만든 방법과 참조로 넣은 자료 (배경·장면 이미지) */
+  method?: ImageMethod;
+  referenceAssetIds?: string[];
   createdAt: string;
   createdBy: string;
   /** 사람이 확인: 도구의 상업 이용 허용 */
@@ -173,11 +213,15 @@ export interface ImagePrompt {
   model: string;
   createdAt: string;
   issues: Issue[];
+  /** 제품형: 제품 사진을 참조로 넣어 배경을 만들 때 맞출 각도·크기·빛 (사람용 안내) */
+  referenceGuideKo?: string;
 }
 
 export interface ImagesDoc {
   version: 1;
   policy: ImagePolicy | null;
+  /** 이미지 단계에서 사람이 바꾼 경로 (예: 사진 요청 중 → 사진 받음, 누끼로) */
+  routeOverride?: RouteOverride | null;
   prompts: ImagePrompt[];
   assets: Asset[];
   items: ImageItem[];
@@ -210,6 +254,12 @@ export const ImagePromptModelOutput = z.object({
   promptKo: z.string().describe("같은 내용의 한국어 설명 (사람이 검토용)"),
   copySpace: z.enum(["위", "아래", "왼쪽", "오른쪽"]).describe("문구와 버튼을 얹을 빈 공간 위치"),
   aspect: z.enum(["1:1", "16:9", "1.91:1"]).describe("권장 비율. 1080x1080은 1:1, 1200x628은 1.91:1"),
+  productPlacementEn: z
+    .string()
+    .describe("제품형일 때만: 제품 사진에 맞출 카메라 각도, 제품이 놓일 빈 자리(위치)와 화면 대비 크기 비율, 빛 방향을 한 문장 영어로. 제품 자체는 묘사하지 않는다. 무형이면 빈 문자열"),
+  referenceGuideKo: z
+    .string()
+    .describe("제품형일 때만: 사람이 이미지 도구에 제품 사진을 참조로 넣을 때 맞출 카메라 각도, 제품 크기 비율(예: 화면 높이의 약 45%), 빛 방향을 쉬운 한국어로. 무형이면 빈 문자열"),
 });
 export type ImagePromptModelOutput = z.infer<typeof ImagePromptModelOutput>;
 
@@ -247,18 +297,21 @@ export function promptDrawsProduct(en: string, route: ImageRoute): boolean {
 
 export function buildImagePrompt(out: ImagePromptModelOutput, idea: Idea, policy: ImagePolicy, model: string, id: string): ImagePrompt {
   const issues: Issue[] = [];
-  const hitsEn = promptTextHits(out.promptEn);
+  const productRoute = policy.route === "product_cutout" || policy.route === "product_regenerate";
+  const placement = productRoute ? out.productPlacementEn.trim() : "";
+  const hitsEn = promptTextHits(`${out.promptEn} ${placement}`);
   if (hitsEn.length) issues.push({ severity: "error", where: "prompt", message: `프롬프트에 글자·로고 묘사: ${hitsEn.join(", ")}` });
   const hitsKo = visualTextHits(out.promptKo);
   if (hitsKo.length) issues.push({ severity: "error", where: "prompt", message: `한국어 설명에 글자·로고 묘사: ${hitsKo.join(", ")}` });
-  if (promptDrawsProduct(out.promptEn, policy.route)) {
+  if (promptDrawsProduct(`${out.promptEn} ${placement}`, policy.route)) {
     issues.push({ severity: "error", where: "prompt", message: "누끼 경로인데 프롬프트가 제품을 그리라고 합니다 (배경·소품만 생성해야 함)" });
   }
   return {
     id,
     ideaId: idea.id,
-    promptEn: `${out.promptEn.trim()} ${fixedSuffix(policy.route, out.copySpace, policy.medical)}`,
+    promptEn: [out.promptEn.trim(), placement, fixedSuffix(policy.route, out.copySpace, policy.medical)].filter(Boolean).join(" "),
     promptKo: out.promptKo.trim(),
+    referenceGuideKo: productRoute ? out.referenceGuideKo.trim() || undefined : undefined,
     copySpace: out.copySpace,
     aspect: out.aspect,
     model,

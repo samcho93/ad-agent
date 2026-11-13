@@ -1,3 +1,4 @@
+import { matchRule, ruleForPrompt } from "@/core/productRules";
 import { readSkill } from "@/core/skills";
 import { effectiveValue } from "@/core/brief";
 import { CaseError, type CaseService } from "@/core/caseService";
@@ -32,6 +33,8 @@ export async function generateImagePrompt(svc: CaseService, images: ImageService
     "- 글자, 간판, 로고, 라벨, 워터마크를 프롬프트에 묘사하지 않는다. 금지 문장과 빈 공간 지시는 시스템이 뒤에 붙인다.",
     "- 경로가 '제품형, 사진 있음(누끼)'이면 제품 자체를 그리지 않는다. 제품이 놓일 자리(받침, 테이블, 빛, 그림자, 소품)만 묘사한다.",
     "- 사람 얼굴이 크게 나오거나 실존 인물·브랜드를 떠올리게 하는 묘사는 피한다.",
+    "- 제품형이면 사람은 이미지 도구에 제품 사진을 참조 이미지로 함께 넣어 배경을 만든다. productPlacementEn 에 제품 사진에 맞출 카메라 각도, 제품이 놓일 빈 자리의 위치와 화면 대비 크기 비율, 빛 방향을 영어 한 문장으로 쓰고, referenceGuideKo 에 같은 내용을 쉬운 한국어로 쓴다. 제품 자체(모양·색·포장)는 묘사하지 않는다.",
+    "- 무형이면 productPlacementEn, referenceGuideKo 는 빈 문자열로 둔다.",
     DATA_RULE,
   ].join("\n");
 
@@ -54,6 +57,7 @@ export async function generateImagePrompt(svc: CaseService, images: ImageService
     `- 분위기: ${idea.visual.mood}`,
     "</아이디어>",
     "배너 규격은 1080x1080(1:1)과 1200x628(1.91:1)이다. 주 이미지는 1:1을 권장한다.",
+    ruleForPrompt(matchRule(svc.currentSettings.productRules, await svc.getIntake(caseId))),
   ]
     .filter(Boolean)
     .join("\n");

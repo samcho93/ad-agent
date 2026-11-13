@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IntakeSchema } from "@/core/intake";
 import { downloadJson, errMsg, go, useApp } from "../app";
-import { QUESTIONS, OBJECTIVES, ASSET_OPTIONS, CHANNEL_OPTIONS, UNKNOWN_LABEL } from "@/core/intake";
+import { QUESTIONS, OBJECTIVES, ASSET_OPTIONS, CHANNEL_OPTIONS, UNKNOWN_LABEL, PRIVACY_NOTICE, parseSizeText, type Channel } from "@/core/intake";
 
 type Form = {
   consent: { aiNotice: boolean; privacy: boolean; portfolio: boolean };
@@ -17,7 +17,7 @@ type Form = {
     8: { likes: string; dislikes: string }; u8: boolean;
     9: boolean | null;
     10: string[]; t10: string; u10: boolean;
-    11: string[]; u11: boolean;
+    11: Channel | null; o11: string; s11: string; k11: string; u11: boolean;
   };
 };
 
@@ -28,7 +28,7 @@ const empty: Form = {
     1: "", 2: "", u2: false, 3: null, u3: false, 4: "", u4: false,
     5: [{ name: "", url: "" }, { name: "", url: "" }, { name: "", url: "" }], u5: false,
     6: "", u6: false, 7: { must: "", avoid: "" }, u7: false, 8: { likes: "", dislikes: "" }, u8: false,
-    9: null, 10: [], t10: "", u10: false, 11: [], u11: false,
+    9: null, 10: [], t10: "", u10: false, 11: null, o11: "", s11: "", k11: "", u11: false,
   },
 };
 
@@ -68,14 +68,15 @@ export default function IntakePage() {
       case 4: return Boolean(f.a[4].trim());
       case 9: return f.a[9] !== null;
       case 10: return f.a[10].length > 0;
-      case 11: return f.a[11].length > 0;
+      case 11:
+        return f.a[11] !== null && (f.a[11] !== "기타" || Boolean(f.a.o11.trim())) && (!f.a.s11.trim() || parseSizeText(f.a.s11) !== null) && (!f.a.k11.trim() || Number(f.a.k11) > 0);
       default: return true; // 5, 6, 7, 8은 비워 둘 수 있음
     }
   };
 
   const toggleUnknown = () => unknownKey && set((d) => { (d.a as Record<string, unknown>)[unknownKey] = !isUnknown; });
 
-  const toggleIn = (key: 10 | 11, v: string) =>
+  const toggleIn = (key: 10, v: string) =>
     set((d) => {
       const arr = d.a[key];
       if (key === 10 && v === "없음") { d.a[10] = arr.includes("없음") ? [] : ["없음"]; return; }
@@ -89,7 +90,7 @@ export default function IntakePage() {
     const body = {
       version: 1,
       submittedAt: now,
-      consent: { ...f.consent, consentedAt: now },
+      consent: { ...f.consent, consentedAt: now, noticeVersion: PRIVACY_NOTICE.version },
       contact: f.contact,
       answers: {
         "1": { text: a[1], unknown: false },
@@ -102,7 +103,9 @@ export default function IntakePage() {
         "8": { likes: a.u8 ? "" : a[8].likes, dislikes: a.u8 ? "" : a[8].dislikes, unknown: a.u8 },
         "9": { hasProduct: a[9] === true },
         "10": { assets: a.u10 ? [] : a[10], text: a.u10 ? "" : a.t10, unknown: a.u10 },
-        "11": { channels: a.u11 ? [] : a[11], unknown: a.u11 },
+        "11": a.u11
+          ? { primary: null, other: "", size: "", maxKB: null, unknown: true }
+          : { primary: a[11], other: a.o11.trim(), size: a.s11.trim(), maxKB: a.k11.trim() ? Number(a.k11) : null, unknown: false },
       },
     };
     return body;
@@ -157,9 +160,17 @@ export default function IntakePage() {
             <input type="checkbox" checked={f.consent.aiNotice} onChange={(e) => set((d) => { d.consent.aiNotice = e.target.checked; })} />
             <span>위 AI 사용 안내를 읽었어요 (필수)</span>
           </label>
-          <label className="card row">
-            <input type="checkbox" checked={f.consent.privacy} onChange={(e) => set((d) => { d.consent.privacy = e.target.checked; })} />
-            <span>개인정보(상호, 담당자 이름, 연락처) 수집·이용에 동의해요 (필수)<br /><span className="small muted">보관 기간: 미정 (확정 후 안내)</span></span>
+          <label className="card row" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
+            <input type="checkbox" style={{ marginTop: 4 }} checked={f.consent.privacy} onChange={(e) => set((d) => { d.consent.privacy = e.target.checked; })} />
+            <span className="stack" style={{ gap: 4, flex: 1, minWidth: 0 }}>
+              <span>개인정보 수집·이용에 동의해요 (필수)</span>
+              <span className="small">
+                {PRIVACY_NOTICE.items.map((it) => (
+                  <span key={it.label} style={{ display: "block" }}><b>{it.label}</b>: {it.text}</span>
+                ))}
+              </span>
+              {PRIVACY_NOTICE.draft && <span className="small muted">이 안내 문구는 초안이에요. 계약서와 관련 법령을 확인한 뒤 확정해요.</span>}
+            </span>
           </label>
           <label className="card row">
             <input type="checkbox" checked={f.consent.portfolio} onChange={(e) => set((d) => { d.consent.portfolio = e.target.checked; })} />
@@ -218,9 +229,29 @@ export default function IntakePage() {
               <textarea placeholder="메모 (예: 휴대폰으로 찍은 사진 몇 장)" value={f.a.t10} onChange={(e) => set((d) => { d.a.t10 = e.target.value; })} />
             </>
           )}
-          {!isUnknown && q.no === 11 && CHANNEL_OPTIONS.map((o) => (
-            <button key={o} className={`choice ${f.a[11].includes(o) ? "on" : ""}`} onClick={() => toggleIn(11, o)}>{o}</button>
-          ))}
+          {!isUnknown && q.no === 11 && (
+            <>
+              {CHANNEL_OPTIONS.map((o) => (
+                <button key={o} className={`choice ${f.a[11] === o ? "on" : ""}`} onClick={() => set((d) => { d.a[11] = o; })}>{o}</button>
+              ))}
+              {f.a[11] === "기타" && (
+                <input type="text" placeholder="매체 이름 (예: 당근 비즈프로필, 유튜브)" value={f.a.o11} onChange={(e) => set((d) => { d.a.o11 = e.target.value; })} />
+              )}
+              <details className="card small">
+                <summary>사이즈·용량을 알고 있다면 (선택)</summary>
+                <div className="stack" style={{ marginTop: 8 }}>
+                  <label className="field"><span>사이즈 (가로x세로 픽셀, 예: 1080x1350)</span>
+                    <input type="text" value={f.a.s11} onChange={(e) => set((d) => { d.a.s11 = e.target.value; })} />
+                  </label>
+                  {f.a.s11.trim() && !parseSizeText(f.a.s11) && <span className="warn">가로x세로 숫자로 적어 주세요 (예: 1080x1350)</span>}
+                  <label className="field"><span>파일 용량 한도 (KB, 예: 500)</span>
+                    <input type="text" inputMode="numeric" value={f.a.k11} onChange={(e) => set((d) => { d.a.k11 = e.target.value.replace(/[^0-9.]/g, ""); })} />
+                  </label>
+                  <span className="muted">모르면 비워 두세요. 담당자가 매체 규정을 확인해요.</span>
+                </div>
+              </details>
+            </>
+          )}
 
           {q.unknownAllowed && (
             <button className={`choice ${isUnknown ? "on" : ""}`} onClick={toggleUnknown}>
@@ -279,7 +310,7 @@ function summary(f: Form, no: number): string {
     case 8: return [a[8].likes, a[8].dislikes].filter(Boolean).join(" / ") || "(비움)";
     case 9: return a[9] === null ? "" : a[9] ? "있음" : "없음";
     case 10: return [a[10].join(", "), a.t10].filter(Boolean).join(" / ");
-    case 11: return a[11].join(", ");
+    case 11: return [a[11] === "기타" ? a.o11 || "기타" : a[11] ?? "", a[11] !== "기타" && a.o11 ? `(${a.o11})` : "", a.s11 ? `사이즈 ${a.s11}` : "", a.k11 ? `용량 한도 ${a.k11}KB` : ""].filter(Boolean).join(" ");
     default: return "";
   }
 }

@@ -3,6 +3,7 @@ import { DeliveryService, type DeliveryReadiness } from "@/core/deliveryService"
 import { renderFile } from "@/core/composeService";
 import { reached, type CaseStatus } from "@/core/caseService";
 import { REVISION_KINDS, type DeliveryDoc, type FinalReview, type RevisionKind, revisionCount, revisionType } from "@/core/delivery";
+import { VariantSizes } from "./VariantSizes";
 import { downloadBytes, downloadJson, errMsg, href, pickJsonFile, useApp } from "../app";
 
 /** 게이트 2 뒤: 광고주 시안 확인(파일) → 완성본 심의(심의 업종) → 납품 ZIP. 수정 요청 기록 */
@@ -11,12 +12,15 @@ export function DeliverySection({ caseId, company, name, status, onChanged }: { 
   const dsvc = useMemo(() => new DeliveryService(svc), [svc]);
   const [doc, setDoc] = useState<DeliveryDoc | null>(null);
   const [ready, setReady] = useState<DeliveryReadiness | null>(null);
+  const [media, setMedia] = useState<{ size: string; maxKB: number | null }>({ size: "", maxKB: null });
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     setDoc(await dsvc.getDoc(caseId));
+    const m = (await svc.getIntake(caseId)).answers["11"];
+    setMedia({ size: m.size, maxKB: m.maxKB });
     setReady(await dsvc.readiness(caseId));
   }, [dsvc, caseId]);
   useEffect(() => {
@@ -139,6 +143,11 @@ export function DeliverySection({ caseId, company, name, status, onChanged }: { 
       )}
       {ready.reviewRequired && doc.finalReview && status !== "client_selected" && (
         <div className="small muted">완성본 심의: {doc.finalReview.result} ({doc.finalReview.date}, {doc.finalReview.by})</div>
+      )}
+
+      {/* 3-1. 변형: 사이즈 추가 */}
+      {status === "client_selected" && doc.selectedVariant && (
+        <VariantSizes caseId={caseId} name={name} doc={doc} maxKB={media.maxKB ?? (typeof settings.qa.maxFileKB === "number" ? settings.qa.maxFileKB : null)} suggestedSize={media.size} onChanged={() => { reload().catch(() => {}); onChanged(); }} />
       )}
 
       {/* 4. 납품 */}

@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { type Intake, type QuestionNo, isUnknown, intakeCorpus, bannedPhrases, OBJECTIVES } from "./intake";
+import { type Intake, type QuestionNo, isUnknown, intakeCorpus, bannedPhrases, mediaText, OBJECTIVES } from "./intake";
 import { type Tag, renderTags, withEstimate, markEstimated, hasTag } from "./tags";
 import { type Issue, factIssues, quoteSupported, reviewIndustryHits, unsupportedNumbers, vagueTarget } from "./validate";
 import type { Settings } from "./settings";
@@ -300,7 +300,7 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     label: "매체·규격·집행 기간",
     content: q11.unknown
       ? `${out.mediaEstimate.trim() || "매체 미정"}. 규격: 매체 확정 후 결정. 집행 기간: 미정`
-      : `${q11.channels.join(", ") || "미정"}. 규격: 매체 확정 후 결정. 집행 기간: 미정`,
+      : `대표 매체: ${mediaText(q11) || "미정"}. ${q11.size.trim() ? "" : "규격: 매체 확정 후 결정. "}${q11.maxKB ? "" : "용량 한도: 확인 필요. "}다른 매체·사이즈는 시안 확정 후 변형 단계에서 추가. 집행 기간: 미정`,
     tags: [{ kind: "intake", qs: [11] }],
     estimated: q11.unknown,
   });

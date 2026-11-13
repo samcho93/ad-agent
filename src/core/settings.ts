@@ -1,4 +1,5 @@
 import defaults from "../../config/settings.json";
+import type { ProductRule } from "./productRules";
 
 /**
  * LLM 연결 방식.
@@ -23,6 +24,8 @@ export interface Settings {
   revision: { includedCount: string | number; includedCountRange: string };
   /** 매체별 파일 용량 한도(KB). 근거가 없어 기본은 "확인 필요" (숫자를 넣으면 검수에서 비교) */
   qa: { maxFileKB: string | number };
+  /** 제품 종류별 규칙 (색·구도·문구 길이). 사람이 넣는다. 기본은 비어 있음 */
+  productRules: ProductRule[];
   pricing: string;
   privacyRetention: string;
   imageModel: string;
@@ -43,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   llm: { ...(defaults.llm as Settings["llm"]), models: { ...(defaults.llm.models as Settings["llm"]["models"]) } },
   revision: defaults.revision,
   qa: defaults.qa,
+  productRules: [],
   pricing: defaults.pricing,
   privacyRetention: defaults.privacyRetention,
   imageModel: defaults.imageModel,
@@ -66,6 +70,7 @@ export function mergeSettings(saved: Partial<Settings> | null | undefined): Sett
     llm: { ...DEFAULT_SETTINGS.llm, ...llmRest, models },
     revision: { ...DEFAULT_SETTINGS.revision, ...(saved.revision ?? {}) },
     qa: { ...DEFAULT_SETTINGS.qa, ...(saved.qa ?? {}) },
+    productRules: Array.isArray(saved.productRules) ? saved.productRules : [],
   };
 }
 

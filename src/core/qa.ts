@@ -78,6 +78,8 @@ export interface RuleInput {
   hasLogoAsset: boolean;
   specs: Record<Variant, Record<string, unknown> | null>;
   maxFileKB: string | number;
+  /** 한도를 어디서 정했는지 (예: "질문지 11번", "설정") */
+  maxFileKBSource?: string;
 }
 
 const kb = (n: number) => Math.round((n / 1024) * 10) / 10;
@@ -101,7 +103,7 @@ export function ruleChecks(input: RuleInput): QaCheck[] {
       if (!dim) add("error", where, "PNG 파일이 아닙니다");
       else if (dim.w !== want.w || dim.h !== want.h) add("error", where, `크기가 규격과 다릅니다 (${dim.w}x${dim.h}, 규격 ${size})`);
       const k = kb(r.bytes.length);
-      if (Number.isFinite(limit) && k > limit) add("warning", where, `파일 용량 ${k}KB가 설정한 한도 ${limit}KB를 넘습니다`);
+      if (Number.isFinite(limit) && k > limit) add("warning", where, `파일 용량 ${k}KB가 한도 ${limit}KB(${input.maxFileKBSource ?? "설정"})를 넘습니다`);
       else add("info", where, `규격 ${size} 확인, 용량 ${k}KB`);
     }
   }
@@ -119,7 +121,7 @@ export function ruleChecks(input: RuleInput): QaCheck[] {
   if (!A || !B) add("error", "시안 A/B", "합성 명세 파일(compose_spec_A/B.json)이 없습니다");
   else {
     const strip = (s: Record<string, unknown>) => {
-      const { variant: _v, texts: _t, button: _b, ...rest } = s;
+      const { variant: _v, texts: _t, button: _b, accent: _a, ...rest } = s;
       return JSON.stringify(rest);
     };
     if (strip(A) !== strip(B)) add("error", "시안 A/B", "A와 B의 그림·배치가 다릅니다. 시안 A/B는 문구·버튼만 달라야 합니다");
@@ -170,7 +172,7 @@ export function llmChecks(out: QaModelOutput, sentFiles: string[], opts: { revie
 /* 3. 게이트 2                                                           */
 /* ------------------------------------------------------------------ */
 
-export const BASE_HUMAN_CHECKS = ["오탈자 없음", "로고 위치·크기 확인", "광고주 확인 요청 사항 처리", "브랜드 톤·색 확인"] as const;
+export const BASE_HUMAN_CHECKS = ["오탈자 없음", "로고 위치·크기 확인", "광고주 확인 요청 사항 처리", "브랜드 톤·색 확인", "디자인 마무리 확인 (제품·문구 균형, 겹침, 배치)"] as const;
 export const REVIEW_HUMAN_CHECK = "카피 사전 점검 완료 (심의 위험 표현 확인)";
 export const MANUAL_IMAGE_CHECK = "이미지 안에 AI가 만든 글자·로고·워터마크 없음 (자동 이미지 검수를 못 해 사람이 확인)";
 

@@ -3,6 +3,7 @@ import { CaseError, reached } from "./caseService";
 import { ImageService } from "./imageService";
 import { type ComposeDoc, type SizeKey, type Variant, copyIssues, defaultComposeDoc, toComposeSpec } from "./compose";
 import { bannedPhrases, intakeCorpus } from "./intake";
+import { matchRule } from "./productRules";
 import type { Issue } from "./validate";
 
 const DOC = "05_compose/compose.json";
@@ -45,7 +46,8 @@ export class ComposeService {
     const idea = ideas?.ideas.find((x) => x.id === ideas.selectedId);
     const brief = await this.svc.getBrief(id);
     if (!idea || !brief) throw new CaseError("게이트 1에서 고른 아이디어가 없습니다");
-    const doc = defaultComposeDoc(idea, brief, await this.images.getDoc(id), by.trim() || "?");
+    const rule = matchRule(this.svc.currentSettings.productRules, await this.svc.getIntake(id));
+    const doc = defaultComposeDoc(idea, brief, await this.images.getDoc(id), by.trim() || "?", rule);
     await this.write(id, doc);
     await this.log(id, { event: "compose_created", by: doc.updatedBy });
     return doc;
@@ -77,7 +79,7 @@ export class ComposeService {
 
   async copyIssues(id: string, doc: ComposeDoc): Promise<Issue[]> {
     const intake = await this.svc.getIntake(id);
-    return copyIssues(doc, intakeCorpus(intake), bannedPhrases(intake));
+    return copyIssues(doc, intakeCorpus(intake), bannedPhrases(intake), matchRule(this.svc.currentSettings.productRules, intake));
   }
 
   /** 렌더 결과 6장을 저장하고 합성 완료로 표시한다 */

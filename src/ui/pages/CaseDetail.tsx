@@ -219,6 +219,9 @@ export default function CasePage({ id }: { id: string }) {
               </div>
 
               <h2>사람이 확정할 항목 <span className="small muted">({s.openCount}개 남음 / 전체 {brief.checklist.length}개)</span></h2>
+          <p className="small muted" style={{ marginTop: -8 }}>
+            추정·검증 경고·사람 결정이 필요한 칸만 모읍니다. AI 초안마다 추정과 경고가 달라 개수가 바뀔 수 있어요 (브리프를 다시 만들면 달라짐).
+          </p>
               <div className="stack">
                 {brief.checklist.map((c) => {
                   const r = brief.rows.find((x) => x.id === c.id)!;

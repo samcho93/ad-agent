@@ -94,13 +94,16 @@ export class QaService {
       const raw = await this.store.read(id, `05_compose/compose_spec_${v}.json`);
       return raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
     };
+    const intakeKB = (await this.svc.getIntake(id)).answers["11"].maxKB;
     const checks = ruleChecks({
       doc,
       renders,
       copyIssues: await this.compose.copyIssues(id, doc),
       hasLogoAsset: imagesDoc.assets.some((a) => a.kind === "logo"),
       specs: { A: await readSpec("A"), B: await readSpec("B") },
-      maxFileKB: this.svc.currentSettings.qa.maxFileKB,
+      // 광고주가 질문지 11번에 적은 용량 한도가 있으면 그것을, 없으면 설정값("확인 필요")
+      maxFileKB: intakeKB ?? this.svc.currentSettings.qa.maxFileKB,
+      maxFileKBSource: intakeKB ? "질문지 11번" : "설정",
     });
 
     // 누끼를 썼으면 원본 제품 사진을 비교 기준으로 함께 보낸다

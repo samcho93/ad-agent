@@ -7,6 +7,10 @@ import {
   type ImagePrompt,
   type ImagesDoc,
   type ImageSource,
+  type ImageRoute,
+  type ImageMethod,
+  PHOTO_ROUTES,
+  ROUTE_LABEL,
   applicableCriteria,
   buildPolicy,
   emptyImagesDoc,
@@ -69,10 +73,32 @@ export class ImageService {
     const brief = await this.svc.getBrief(id);
     if (!brief) throw new CaseError("브리프가 없습니다");
     const doc = await this.getDoc(id);
-    doc.policy = buildPolicy(await this.svc.getIntake(id), brief, doc.assets);
+    doc.policy = buildPolicy(await this.svc.getIntake(id), brief, doc.assets, doc.routeOverride);
     await this.store.write(id, POLICY_MD, renderPolicyMarkdown(doc.policy, meta.company));
     await this.store.write(id, DOC, JSON.stringify(doc, null, 2) + "\n");
     return doc;
+  }
+
+  /**
+   * 제품 사진 상태(경로)를 바꾼다. 예: "광고주에게 사진 요청 중" → 사진을 받아 "누끼".
+   * 브리프는 게이트 1 뒤 잠기므로 이미지 문서에 남기고, 승인 기록과 policy.md 에 적는다.
+   */
+  async setRoute(id: string, route: ImageRoute, by: string, note = "") {
+    await this.assertOpen(id);
+    const who = by.trim();
+    if (!who) throw new CaseError("바꾼 사람 이름이 필요합니다");
+    const brief = await this.svc.getBrief(id);
+    if (!brief) throw new CaseError("브리프가 없습니다");
+    const allowed = PHOTO_ROUTES[brief.hasProduct ? "product" : "intangible"].map((r) => r.route);
+    if (!allowed.includes(route)) throw new CaseError("이 광고(제품 유무)에는 고를 수 없는 경로입니다");
+    const doc = await this.getDoc(id);
+    const before = doc.policy?.route ?? null;
+    if (before === route) return doc;
+    doc.routeOverride = { route, by: who, at: new Date().toISOString(), note: note.trim() };
+    await this.saveDoc(id, doc);
+    await this.log(id, { event: "route_changed", from: before, to: route, note: note.trim(), by: who });
+    await this.svc.recordApproval(id, "이미지 방침 변경", who, `${before ? ROUTE_LABEL[before] : "없음"} → ${ROUTE_LABEL[route]}${note.trim() ? `. ${note.trim()}` : ""}`);
+    return this.refreshPolicy(id);
   }
 
   /* ---------------- 자료 (제품 사진·매장 사진·로고) ---------------- */
@@ -121,12 +147,16 @@ export class ImageService {
   async addImage(
     id: string,
     blob: Blob,
-    info: { source: ImageSource; role: ImageItem["role"]; tool: string; promptId?: string; figma?: ImageItem["figma"]; fromAssetId?: string },
+    info: { source: ImageSource; role: ImageItem["role"]; tool: string; promptId?: string; figma?: ImageItem["figma"]; fromAssetId?: string; method?: ImageMethod; referenceAssetIds?: string[] },
     by: string,
   ): Promise<ImageItem> {
     await this.assertOpen(id);
     const ext = EXT[blob.type];
     if (!ext || ext === "svg") throw new CaseError("PNG, JPG, WEBP 이미지만 쓸 수 있습니다");
+    if (info.method === "product_reference") {
+      const known = new Set((await this.getDoc(id)).assets.filter((a) => a.kind === "product").map((a) => a.id));
+      if (!info.referenceAssetIds?.length || info.referenceAssetIds.some((a) => !known.has(a))) throw new CaseError("참조로 넣은 제품 사진을 고르세요 (자료에 올린 제품 사진)");
+    }
     if (blob.size > MAX_IMAGE_BYTES) throw new CaseError("이미지가 너무 큽니다 (25MB 이하)");
     const itemId = newId(info.role === "cutout" ? "cutout" : "img");
     const item: ImageItem = {
@@ -138,6 +168,8 @@ export class ImageService {
       promptId: info.promptId,
       figma: info.figma,
       fromAssetId: info.fromAssetId,
+      method: info.role === "scene" ? info.method : undefined,
+      referenceAssetIds: info.role === "scene" && info.method === "product_reference" ? info.referenceAssetIds ?? [] : undefined,
       createdAt: new Date().toISOString(),
       createdBy: by.trim() || "?",
       commercialUseChecked: false,
@@ -160,6 +192,8 @@ export class ImageService {
       prompt: prompt ? { id: prompt.id, en: prompt.promptEn } : null,
       figma: item.figma ?? null,
       fromAsset: item.fromAssetId ?? null,
+      method: item.method ?? null,
+      referenceAssets: item.referenceAssetIds ?? null,
       bytes: blob.size,
       by: item.createdBy,
     });

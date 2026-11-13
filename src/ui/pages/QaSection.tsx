@@ -88,7 +88,7 @@ export function QaSection({ caseId, name, status, onChanged }: { caseId: string;
             {qa.llm.status !== "done" && qa.llm.note && <div className="muted">{qa.llm.note}</div>}
           </div>
           {qa.llm.overall && <div><span className="tag ai">AI 초안</span> 총평: {qa.llm.overall}</div>}
-          {errors.length === 0 && warnings.length === 0 && <div className="okc">✓ 오류·경고 없음</div>}
+          {errors.length === 0 && warnings.length === 0 && <div className="okc">✓ 자동 검수 오류·경고 없음 — 디자인 판단은 아래 사람 확인에서</div>}
           {errors.map((c) => (
             <ErrorRow key={c.id} c={c} override={qa.overrides[c.id]} disabled={passed || !!busy} onSave={(reason) => run(`ov:${c.id}`, () => qaSvc.setOverride(caseId, c.id, reason, name))} />
           ))}

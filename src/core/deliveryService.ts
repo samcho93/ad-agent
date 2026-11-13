@@ -2,10 +2,14 @@ import { zipSync, strToU8 } from "fflate";
 import type { CaseService } from "./caseService";
 import { CaseError, blobToBase64, reached } from "./caseService";
 import { ComposeService, renderFile } from "./composeService";
-import type { Variant } from "./compose";
+import { type SizeKey, type Variant, sizeOf } from "./compose";
+import { parseSizeText } from "./intake";
+import { pngSize } from "./qa";
 import {
   type AnswerRecord,
   type DeliveryDoc,
+  type ExtraSize,
+  MAX_EXTRA_SIZES,
   type FinalReview,
   type ProofFile,
   type RevisionKind,
@@ -153,6 +157,8 @@ export class DeliveryService {
     doc.revisions.push(rec);
     doc.selectedVariant = null;
     doc.finalReview = null;
+    // 시안이 바뀌므로 변형 사이즈는 목록만 남기고 다시 저장·확인하게 한다
+    for (const x of doc.extraSizes ?? []) Object.assign(x, { savedAt: null, kb: null, checkedBy: null });
     await this.save(id, doc);
     await this.store.append(id, "revisions.md", renderRevisionLine(rec, this.svc.currentSettings.revision.includedCount));
     await this.svc.setStatus(id, reopenStage(req.kinds) === "images" ? "gate1_approved" : "images_selected");
@@ -178,6 +184,73 @@ export class DeliveryService {
 
   /* ---------------- 납품 ---------------- */
 
+  /* ---------------- 변형 단계 (사이즈 추가) ---------------- */
+
+  private async assertVariantStage(id: string) {
+    const meta = await this.svc.getMeta(id);
+    if (meta.status !== "client_selected") throw new CaseError("광고주가 시안을 확정한 뒤, 납품 전에 사이즈를 더할 수 있습니다");
+    const doc = await this.getDoc(id);
+    if (!doc.selectedVariant) throw new CaseError("광고주가 고른 시안이 없습니다");
+    doc.extraSizes ??= [];
+    return doc;
+  }
+
+  /** 고른 시안을 다른 사이즈로 더 만든다 (예: 1080x1350). 기본 3종은 이미 있다 */
+  async addExtraSize(id: string, sizeText: string, note: string, by: string): Promise<ExtraSize> {
+    const who = this.who(by);
+    const doc = await this.assertVariantStage(id);
+    const parsed = parseSizeText(sizeText);
+    if (!parsed) throw new CaseError("사이즈는 가로x세로 픽셀로 적어 주세요 (예: 1080x1350, 50~4000)");
+    const size = `${parsed.w}x${parsed.h}` as SizeKey;
+    const cdoc = (await this.compose.getDoc(id))!;
+    if ((cdoc.shared.sizes as string[]).includes(size) || doc.extraSizes!.some((x) => x.size === size)) throw new CaseError(`${size} 는 이미 있습니다`);
+    if (doc.extraSizes!.length >= MAX_EXTRA_SIZES) throw new CaseError(`추가 사이즈는 ${MAX_EXTRA_SIZES}개까지입니다`);
+    const x: ExtraSize = { size, note: note.trim(), addedBy: who, addedAt: new Date().toISOString(), savedAt: null, kb: null, checkedBy: null };
+    doc.extraSizes!.push(x);
+    await this.save(id, doc);
+    return x;
+  }
+
+  async removeExtraSize(id: string, size: string, by: string) {
+    this.who(by);
+    const doc = await this.assertVariantStage(id);
+    const x = doc.extraSizes!.find((e) => e.size === size);
+    if (!x) throw new CaseError("없는 사이즈입니다");
+    doc.extraSizes = doc.extraSizes!.filter((e) => e !== x);
+    await this.store.removeFile(id, renderFile(doc.selectedVariant!, x.size)).catch(() => {});
+    await this.save(id, doc);
+  }
+
+  /** 추가 사이즈 PNG 저장. 렌더 오류(문구 잘림 등)가 있으면 막는다 */
+  async saveExtraRenders(id: string, renders: { size: string; blob: Blob }[], renderErrors: string[], by: string) {
+    const who = this.who(by);
+    const doc = await this.assertVariantStage(id);
+    if (renderErrors.length) throw new CaseError(`저장할 수 없습니다: ${renderErrors.join(" / ")}`);
+    const v = doc.selectedVariant!;
+    for (const r of renders) {
+      const x = doc.extraSizes!.find((e) => e.size === r.size);
+      if (!x) throw new CaseError(`추가하지 않은 사이즈입니다: ${r.size}`);
+      const dim = pngSize(new Uint8Array(await r.blob.arrayBuffer()));
+      const want = sizeOf(x.size);
+      if (!dim || dim.w !== want.w || dim.h !== want.h) throw new CaseError(`${x.size}: PNG 크기가 맞지 않습니다`);
+      await this.store.writeBlob(id, renderFile(v, x.size), r.blob);
+      Object.assign(x, { savedAt: new Date().toISOString(), kb: Math.round((r.blob.size / 1024) * 10) / 10, checkedBy: null });
+    }
+    await this.save(id, doc);
+    await this.svc.recordApproval(id, "변형 사이즈 저장", who, `시안 ${v} × ${renders.map((r) => r.size).join(", ")}`);
+  }
+
+  /** 추가 사이즈를 사람이 확인했다 (잘림·겹침·가독성) */
+  async checkExtraSize(id: string, size: string, checked: boolean, by: string) {
+    const who = this.who(by);
+    const doc = await this.assertVariantStage(id);
+    const x = doc.extraSizes!.find((e) => e.size === size);
+    if (!x) throw new CaseError("없는 사이즈입니다");
+    if (checked && !x.savedAt) throw new CaseError("PNG를 먼저 저장하세요");
+    x.checkedBy = checked ? who : null;
+    await this.save(id, doc);
+  }
+
   async readiness(id: string): Promise<DeliveryReadiness> {
     const meta = await this.svc.getMeta(id);
     const doc = await this.getDoc(id);
@@ -186,6 +259,10 @@ export class DeliveryService {
     if (meta.status === "delivered") blockers.push("이미 납품했습니다");
     else if (meta.status !== "client_selected" || !doc.selectedVariant) blockers.push("광고주가 시안을 확정해야 합니다");
     if (reviewRequired && doc.finalReview?.result !== "통과") blockers.push("완성본 심의 통과 기록이 필요합니다 (심의 업종)");
+    for (const x of doc.extraSizes ?? []) {
+      if (!x.savedAt) blockers.push(`추가 사이즈 ${x.size}: PNG를 저장하세요`);
+      else if (!x.checkedBy) blockers.push(`추가 사이즈 ${x.size}: 잘림·겹침·가독성을 사람이 확인하세요`);
+    }
     return { ok: blockers.length === 0, blockers, reviewRequired };
   }
 
@@ -203,7 +280,7 @@ export class DeliveryService {
     const cdoc = (await this.compose.getDoc(id))!;
     const v = again ? doc.delivered!.variant : doc.selectedVariant!;
     const files: Record<string, Uint8Array> = {};
-    for (const size of cdoc.shared.sizes) {
+    for (const size of [...cdoc.shared.sizes, ...(doc.extraSizes ?? []).map((x) => x.size)]) {
       const blob = await this.store.readBlob(id, renderFile(v, size));
       if (!blob) throw new CaseError(`시안 ${v} ${size} 이미지가 없습니다`);
       files[`${v}_${size}.png`] = new Uint8Array(await blob.arrayBuffer());
@@ -219,7 +296,7 @@ export class DeliveryService {
     await text("approvals.md");
     await text("revisions.md");
     await text("02_brief.md");
-    files["README.txt"] = strToU8(deliveryReadme(meta.company, v, [...Object.keys(files), "README.txt"], r.reviewRequired, doc.finalReview));
+    files["README.txt"] = strToU8(deliveryReadme(meta.company, v, [...Object.keys(files), "README.txt"], r.reviewRequired, doc.finalReview, doc.extraSizes ?? []));
     const bytes = zipSync(files, { level: 6 });
     if (!again) {
       doc.delivered = { at: new Date().toISOString(), by: who, variant: v, files: Object.keys(files) };

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ComposeService, renderFile } from "@/core/composeService";
-import { SIZES, SIZE_LABEL, type ComposeDoc, type CopySpace, type Corner, type SizeKey, type Variant, type VariantCopy } from "@/core/compose";
+import { SIZES, SIZE_LABEL, sizeLabel as sizeLabelOf, type ComposeDoc, type CopySpace, type Corner, type SizeKey, type Variant, type VariantCopy } from "@/core/compose";
 import type { Issue } from "@/core/validate";
 import { loadFonts } from "@/render/fonts";
-import { blobToImage, canvasToPng, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
+import { canvasToPng, loadComposeSources, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
 import { reached, type CaseStatus } from "@/core/caseService";
 import { errMsg, useApp } from "../app";
 
@@ -30,16 +30,7 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
       try {
         const d = await compose.ensureDoc(caseId, name || "?");
         await loadFonts();
-        const blob = async (f: string) => {
-          const b = await store.readBlob(caseId, f);
-          if (!b) throw new Error(`파일이 없습니다: ${f}`);
-          return blobToImage(b);
-        };
-        const s: Sources = {
-          scene: await blob(d.shared.image),
-          product: d.shared.product ? await blob(d.shared.product.file) : undefined,
-          logo: d.shared.logo ? await blob(d.shared.logo.file).catch(() => undefined) : undefined,
-        };
+        const s = await loadComposeSources((f) => store.readBlob(caseId, f), d);
         if (!alive) return;
         setSrc(s);
         setDoc(d);
@@ -140,7 +131,7 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
       await compose.saveRenders(caseId, renders, errs, name);
     });
 
-  const sizeLabel = (c: RenderCheck) => `${c.variant} · ${SIZE_LABEL[c.size]}`;
+  const checkLabel = (c: RenderCheck) => `${c.variant} · ${sizeLabelOf(c.size)}`;
   const locked = reached(status as CaseStatus, "gate2_approved");
 
   return (
@@ -172,17 +163,27 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
           return (
             <div key={v} className="card stack small">
               <b>시안 {v} 문구</b>
-              <label className="field"><span>헤드라인 (엔터로 줄바꿈)</span><textarea style={{ minHeight: 60 }} value={c.headline} onChange={(e) => setCopy(v, { headline: e.target.value })} /></label>
+              <label className="field"><span>리드 문구 (헤드라인 위 작은 한 줄, 선택 · 띠 배너 제외)</span><input type="text" placeholder="예: 복잡한 설거지 대신" value={c.lead ?? ""} onChange={(e) => setCopy(v, { lead: e.target.value })} /></label>
+              <label className="field"><span>헤드라인 — <b>엔터로 줄바꿈</b>하면 뜻 단위로 끊을 수 있어요</span><textarea style={{ minHeight: 60 }} value={c.headline} onChange={(e) => setCopy(v, { headline: e.target.value })} /></label>
               <label className="field"><span>서브카피 (띠 배너에는 들어가지 않음)</span><input type="text" value={c.sub} onChange={(e) => setCopy(v, { sub: e.target.value })} /></label>
               <label className="field"><span>버튼 문구</span><input type="text" value={c.cta} onChange={(e) => setCopy(v, { cta: e.target.value })} /></label>
               <div className="row">
                 <label className="row">버튼 색 <input type="color" value={c.buttonBg} onChange={(e) => setCopy(v, { buttonBg: e.target.value })} /></label>
                 <label className="row">버튼 글자 <input type="color" value={c.buttonFg} onChange={(e) => setCopy(v, { buttonFg: e.target.value })} /></label>
+                <label className="row"><input type="checkbox" checked={!!c.ctaArrow} onChange={(e) => setCopy(v, { ctaArrow: e.target.checked })} /> 버튼 화살표 ›</label>
+              </div>
+              <div className="row">
+                <label className="row"><input type="checkbox" checked={!!c.subColor} onChange={(e) => setCopy(v, { subColor: e.target.checked ? c.buttonBg : undefined })} /> 서브카피 색 따로</label>
+                {c.subColor && <input type="color" value={c.subColor} onChange={(e) => setCopy(v, { subColor: e.target.value })} />}
               </div>
             </div>
           );
         })}
       </div>
+
+      <p className="small muted" style={{ margin: 0 }}>
+        🎨 {doc.colorSource?.reason ?? "버튼 색은 처음 합성을 만들 때 정한 값입니다."} 색과 톤을 바꾸는 판단은 사람이 합니다.
+      </p>
 
       <div className="card stack small">
         <b>A/B 공통 (그림·배치)</b>
@@ -223,10 +224,11 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
 
       <div className="card stack small">
         <b>점검 (시안 A/B × 사이즈 3종)</b>
-        {errors.length === 0 && warnings.length === 0 && <div className="okc">✓ 문제 없음</div>}
-        {checks.filter((c) => c.severity === "error").map((c, i) => <div key={`e${i}`} className="err">✗ {sizeLabel(c)}: {c.message}</div>)}
+        <span className="muted">점검 범위: 문구 잘림·넘침, 겹침, 금지어·근거 없는 숫자, 버튼 대비. 제품·문구 균형, 색, 배치 같은 디자인 판단은 사람이 합니다.</span>
+        {errors.length === 0 && warnings.length === 0 && <div className="okc">✓ 규칙 점검 통과 — 디자인 마무리는 사람이 확인하세요</div>}
+        {checks.filter((c) => c.severity === "error").map((c, i) => <div key={`e${i}`} className="err">✗ {checkLabel(c)}: {c.message}</div>)}
         {copyIssues.filter((i) => i.severity === "error").map((c, i) => <div key={`ce${i}`} className="err">✗ {c.where}: {c.message}</div>)}
-        {checks.filter((c) => c.severity === "warning").map((c, i) => <div key={`w${i}`} className="warn">⚠ {sizeLabel(c)}: {c.message}</div>)}
+        {checks.filter((c) => c.severity === "warning").map((c, i) => <div key={`w${i}`} className="warn">⚠ {checkLabel(c)}: {c.message}</div>)}
         {copyIssues.filter((i) => i.severity === "warning").map((c, i) => <div key={`cw${i}`} className="warn">⚠ {c.where}: {c.message}</div>)}
         <div className="row">
           <button disabled={!!busy || !dirty} onClick={() => !needName() && saveDoc()}>{busy === "save" ? "저장 중…" : dirty ? "변경 저장" : "저장됨"}</button>

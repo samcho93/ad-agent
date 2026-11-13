@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { SIZES, type Variant } from "./compose";
+import { SIZES, type SizeKey, type Variant } from "./compose";
 
 /**
  * MVP 4단계: 광고주 시안 확인(파일 주고받기), 수정 기록, 완성본 심의, 납품.
@@ -57,9 +57,26 @@ export interface DeliveryDoc {
   finalReview: FinalReview | null;
   revisions: RevisionRecord[];
   delivered: { at: string; by: string; variant: Variant; files: string[] } | null;
+  /** 변형 단계: 광고주가 고른 시안을 다른 매체·사이즈로 더 만든 것 */
+  extraSizes?: ExtraSize[];
 }
 
-export const emptyDelivery = (): DeliveryDoc => ({ version: 1, proofs: [], answers: [], selectedVariant: null, finalReview: null, revisions: [], delivered: null });
+export const emptyDelivery = (): DeliveryDoc => ({ version: 1, proofs: [], answers: [], selectedVariant: null, finalReview: null, revisions: [], delivered: null, extraSizes: [] });
+
+/** 변형 사이즈 하나 */
+export interface ExtraSize {
+  size: SizeKey;
+  /** 특수 매체 가이드 등 메모 */
+  note: string;
+  addedBy: string;
+  addedAt: string;
+  /** PNG 를 저장한 시각 (수정 요청이 오면 다시 저장해야 해서 비운다) */
+  savedAt: string | null;
+  kb: number | null;
+  /** 사람이 잘림·겹침·가독성을 확인함 (LLM 이미지 검수는 기본 3종에만 했으므로) */
+  checkedBy: string | null;
+}
+export const MAX_EXTRA_SIZES = 10;
 
 /** 콘셉트 변경이 들어 있으면 새 시안 */
 export const revisionType = (kinds: readonly RevisionKind[]): RevisionRecord["type"] => (kinds.includes("콘셉트 변경") ? "새 시안" : "수정");
@@ -84,7 +101,7 @@ const VariantProof = z.object({
   sub: short(400),
   cta: short(60),
   /** 사이즈별 PNG (data URL). 화면에서 <img> 로만 쓴다 */
-  images: z.partialRecord(z.enum(SIZES), z.string().max(12 * 1024 * 1024).regex(PNG_DATA_URL)),
+  images: z.partialRecord(z.enum(SIZES), z.string().max(12 * 1024 * 1024).regex(PNG_DATA_URL)), // 광고주 확인은 기본 3종만
 });
 
 /** 광고주에게 보내는 시안 확인 파일. 개인정보(담당자 이름·연락처)는 넣지 않는다 */
@@ -128,7 +145,7 @@ export function renderRevisionLine(r: RevisionRecord, included: string | number)
   return `- ${r.at} | ${r.round}차 | ${r.source} | ${r.type} | ${r.kinds.join(", ")} | ${clean(r.detail) || "-"} | ${counted} | ${clean(r.by)}\n`;
 }
 
-export function deliveryReadme(company: string, variant: Variant, files: string[], review: boolean, finalReview: FinalReview | null) {
+export function deliveryReadme(company: string, variant: Variant, files: string[], review: boolean, finalReview: FinalReview | null, extras: ExtraSize[] = []) {
   return [
     `광고 시안 납품 — ${company}`,
     "",
@@ -138,6 +155,8 @@ export function deliveryReadme(company: string, variant: Variant, files: string[
     "",
     "들어 있는 파일",
     ...files.map((f) => `- ${f}`),
+    "",
+    ...(extras.length ? ["", "추가 사이즈 (변형 단계)", ...extras.map((x) => `- ${x.size}${x.note ? `: ${x.note}` : ""} (확인: ${x.checkedBy ?? "-"})`)] : []),
     "",
     "안내",
     "- 이미지 안의 문구와 로고는 합성 단계에서 폰트(Pretendard, SIL OFL 1.1)와 광고주 원본 로고로 얹었습니다.",

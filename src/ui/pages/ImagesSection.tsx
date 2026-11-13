@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reached, type CaseStatus } from "@/core/caseService";
 import { ImageService } from "@/core/imageService";
-import { ASSET_KIND_LABEL, ROUTE_LABEL, applicableCriteria, type AssetKind, type ImageItem, type ImagesDoc } from "@/core/images";
+import { ASSET_KIND_LABEL, IMAGE_METHOD_LABEL, PHOTO_ROUTES, ROUTE_LABEL, applicableCriteria, type AssetKind, type ImageItem, type ImageMethod, type ImageRoute, type ImagesDoc } from "@/core/images";
 import { generateImagePrompt } from "@/llm/imagePipeline";
 import { fetchFigmaFramePng } from "@/integrations/figma";
 import { CUTOUT_TOOL, removeBackground } from "@/integrations/cutout";
@@ -83,6 +83,8 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
   const [promptForImport, setPromptForImport] = useState("");
   const [uploadTool, setUploadTool] = useState("Figma (PNG로 내보내기)");
   const [pasteTool, setPasteTool] = useState("Figma (PNG로 복사)");
+  const [method, setMethod] = useState<ImageMethod>("prompt");
+  const [refAssets, setRefAssets] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
     let d = await images.getDoc(caseId);
@@ -124,6 +126,13 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
 
   if (!doc) return <p className="muted">이미지 단계를 불러오는 중…</p>;
   const policy = doc.policy;
+  const productAssets = doc.assets.filter((a) => a.kind === "product");
+  const isProductCase = !policy || policy.route.startsWith("product");
+  /** 가져오는 이미지의 만든 방법 기록 */
+  const methodInfo = () => ({
+    method,
+    referenceAssetIds: method === "product_reference" ? (refAssets.length ? refAssets : productAssets.map((a) => a.id)) : undefined,
+  });
   const latestPrompt = doc.prompts[doc.prompts.length - 1];
   const productRoute = policy?.route === "product_cutout" || policy?.route === "product_regenerate";
   const visibleItems = doc.items.filter((i) => i.status !== "discarded");
@@ -178,8 +187,20 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
           <h3>이미지 방침 (ad-image-router)</h3>
           <div><b>경로:</b> {ROUTE_LABEL[policy.route]}</div>
           <div className="muted">{policy.reason}{policy.medical ? " · 의료: 시술·전후 비교로 보이는 AI 이미지 금지" : ""}</div>
+          <RouteSwitch
+            current={policy.route}
+            options={PHOTO_ROUTES[isProductCase ? "product" : "intangible"]}
+            hasProductPhoto={productAssets.length > 0}
+            busy={!!busy}
+            onChange={(route, note) => { if (!needName("top")) run("route", () => images.setRoute(caseId, route, name, note)); }}
+          />
           {policy.blockers.map((b) => <div key={b} className="warn">✗ {b}</div>)}
-          {policy.clientRequests.length > 0 && <div><b>광고주 확인·요청:</b> {policy.clientRequests.join(" · ")}</div>}
+          {policy.clientRequests.length > 0 && (
+            <div className="row">
+              <span><b>광고주 확인·요청:</b> {policy.clientRequests.join(" · ")}</span>
+              <button className="small" onClick={() => navigator.clipboard.writeText(`광고 제작에 필요한 자료를 보내 주세요.\n- ${policy.clientRequests.join("\n- ")}`)}>요청 문구 복사</button>
+            </div>
+          )}
           <details>
             <summary>검수 기준 ({policy.qaCriteria.length})</summary>
             <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{policy.qaCriteria.map((c) => <li key={c}>{c}</li>)}</ul>
@@ -209,6 +230,17 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
               <button onClick={() => navigator.clipboard.writeText(latestPrompt.promptEn)}>영어 프롬프트 복사</button>
             </div>
             <div>{latestPrompt.promptKo}</div>
+            {(policy?.route === "product_cutout" || policy?.route === "product_regenerate") && (
+              <div className="card stack" style={{ background: "var(--bg)" }}>
+                <b>권장 순서: 제품 사진을 참조로 넣어 배경 만들기</b>
+                <ol style={{ margin: 0, paddingLeft: 18 }}>
+                  <li>이미지 도구(Figma AI 등)에 <b>제품 사진을 참조 이미지로</b> 함께 넣습니다. 배경을 따로 먼저 만들면 제품이 소품처럼 떠 보이기 쉽습니다.</li>
+                  <li>위 프롬프트로 배경을 만듭니다. 제품 사진에 맞출 각도·크기·빛: {latestPrompt.referenceGuideKo ?? "프롬프트를 다시 만들면 안내가 나옵니다"}</li>
+                  <li>배경에 제품이 다시 그려졌다면 그 이미지는 쓰지 않거나, 원본 기반 재생성으로 보고 원본과 나란히 비교합니다.</li>
+                  <li>가져올 때 '만든 방법'에서 <b>제품 사진을 참조 이미지로 넣어 생성</b>을 고릅니다. 제품은 다음 단계에서 원본 누끼로 얹습니다.</li>
+                </ol>
+              </div>
+            )}
             {latestPrompt.issues.map((i, k) => <div key={k} className={i.severity === "error" ? "err" : "warn"}>⚠ {i.message}</div>)}
           </div>
         )}
@@ -225,6 +257,28 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
           </select>
         </label>
         <div className="row">
+          <label className="row">만든 방법 (기록용)
+            <select value={method} onChange={(e) => setMethod(e.target.value as ImageMethod)}>
+              {(Object.keys(IMAGE_METHOD_LABEL) as ImageMethod[]).filter((m) => m !== "product_reference" || isProductCase).map((m) => <option key={m} value={m}>{IMAGE_METHOD_LABEL[m]}</option>)}
+            </select>
+          </label>
+          {method === "product_reference" && (
+            productAssets.length === 0 ? <span className="warn">자료에 제품 사진을 먼저 올리세요</span> : (
+              <span className="row">참조한 사진
+                {productAssets.map((a) => (
+                  <label key={a.id} className="row">
+                    <input type="checkbox" checked={refAssets.length ? refAssets.includes(a.id) : true} onChange={(e) => {
+                      const cur = refAssets.length ? refAssets : productAssets.map((x) => x.id);
+                      setRefAssets(e.target.checked ? [...new Set([...cur, a.id])] : cur.filter((x) => x !== a.id));
+                    }} />
+                    {a.originalName.slice(0, 20)}
+                  </label>
+                ))}
+              </span>
+            )
+          )}
+        </div>
+        <div className="row">
           <input type="url" placeholder="Figma 프레임 링크 (프레임 선택 → Ctrl+L 로 복사)" value={figmaLink} onChange={(e) => setFigmaLink(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
           <button
             disabled={!!busy || !figmaLink.trim()}
@@ -233,7 +287,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
               if (needName("import")) return;
               run("figma", async () => {
                 const r = await fetchFigmaFramePng(secrets.figmaToken ?? "", figmaLink);
-                await images.addImage(caseId, r.blob, { source: "figma", role: "scene", tool: "Figma (REST 렌더링)", promptId: promptForImport || undefined, figma: { fileKey: r.fileKey, nodeId: r.nodeId } }, name);
+                await images.addImage(caseId, r.blob, { source: "figma", role: "scene", tool: "Figma (REST 렌더링)", promptId: promptForImport || undefined, figma: { fileKey: r.fileKey, nodeId: r.nodeId }, ...methodInfo() }, name);
                 setFigmaLink("");
               });
             }}
@@ -248,7 +302,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
             onClick={async () => {
               if (needName("import")) return;
               const fs = await pickFiles(IMAGE_TYPES, true);
-              if (fs.length) run("upload", async () => { for (const f of fs) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: uploadTool.trim(), promptId: promptForImport || undefined }, name); });
+              if (fs.length) run("upload", async () => { for (const f of fs) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: uploadTool.trim(), promptId: promptForImport || undefined, ...methodInfo() }, name); });
             }}
           >
             {busy === "upload" ? "올리는 중…" : "직접 올리기"}
@@ -268,7 +322,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
             const files = [...e.clipboardData.items].filter((it) => it.kind === "file" && it.type.startsWith("image/")).map((it) => it.getAsFile()).filter((f): f is File => !!f);
             if (!files.length) return setErr("붙여 넣은 내용에 이미지가 없습니다. Figma에서 프레임을 고르고 Ctrl+Shift+C(PNG로 복사) 했는지 확인하세요", "import");
             if (needName("import") || !pasteTool.trim()) return;
-            run("paste", async () => { for (const f of files) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: pasteTool.trim(), promptId: promptForImport || undefined }, name); });
+            run("paste", async () => { for (const f of files) await images.addImage(caseId, f, { source: "upload", role: "scene", tool: pasteTool.trim(), promptId: promptForImport || undefined, ...methodInfo() }, name); });
           }}
         >
           {busy === "paste" ? "붙여 넣는 중…" : (
@@ -279,7 +333,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
           )}
         </div>
         <AreaErr area="import" />
-        <p className="muted">가져온 이미지는 바로 저장되고, 도구·프롬프트·날짜가 기록됩니다.</p>
+        <p className="muted">가져온 이미지는 바로 저장되고, 도구·프롬프트·만든 방법·날짜가 기록됩니다.</p>
       </div>
 
       {/* 5. 누끼 */}
@@ -367,6 +421,12 @@ function ImageCard({ item, doc, url, originalUrl, busy, onPatch }: {
       </div>
       <div className="muted">{item.tool} · {new Date(item.createdAt).toLocaleString("ko-KR")} · {item.createdBy}</div>
       {prompt && <div className="muted">프롬프트: {prompt.id}</div>}
+      {item.method && (
+        <div className="muted">
+          만든 방법: {IMAGE_METHOD_LABEL[item.method]}
+          {item.referenceAssetIds?.length ? ` (참조: ${item.referenceAssetIds.map((id) => doc.assets.find((a) => a.id === id)?.originalName ?? id).join(", ")})` : ""}
+        </div>
+      )}
       {item.figma && <div className="muted">Figma: {item.figma.fileKey} / {item.figma.nodeId}</div>}
       <label className="row">
         <input type="checkbox" checked={item.commercialUseChecked} disabled={busy} onChange={(e) => onPatch({ commercialUseChecked: e.target.checked })} />
@@ -385,6 +445,34 @@ function ImageCard({ item, doc, url, originalUrl, busy, onPatch }: {
           <button disabled={busy} onClick={() => onPatch({ status: "candidate" })}>선택 취소</button>
         )}
         <button disabled={busy} onClick={() => confirm("이 이미지를 버릴까요? (파일과 기록은 남습니다)") && onPatch({ status: "discarded" })}>버리기</button>
+      </div>
+    </div>
+  );
+}
+
+/** 제품 사진 상태(이미지 경로) 바꾸기. 예: 광고주에게 사진 요청 중 → 사진 받음 → 누끼 */
+function RouteSwitch({ current, options, hasProductPhoto, busy, onChange }: {
+  current: ImageRoute; options: { route: ImageRoute; label: string }[]; hasProductPhoto: boolean; busy: boolean; onChange: (route: ImageRoute, note: string) => void;
+}) {
+  const [next, setNext] = useState<ImageRoute>(current);
+  useEffect(() => setNext(current), [current]);
+  const waitingButHasPhoto = current === "product_need_photo" && hasProductPhoto;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {waitingButHasPhoto && (
+        <div className="row">
+          <span className="okc"><b>제품 사진을 받았습니다.</b></span>
+          <button className="primary small" disabled={busy} onClick={() => onChange("product_cutout", "광고주에게 받은 제품 사진으로 진행")}>사진 받음 → 누끼 경로로</button>
+        </div>
+      )}
+      <div className="row">
+        <label className="row">{current.startsWith("product") ? "제품 사진 상태" : "이미지 경로"}
+          <select value={next} onChange={(e) => setNext(e.target.value as ImageRoute)}>
+            {options.map((o) => <option key={o.route} value={o.route}>{o.label}</option>)}
+          </select>
+        </label>
+        <button className="small" disabled={busy || next === current} onClick={() => onChange(next, "")}>바꾸기</button>
+        <span className="muted">브리프는 잠겨 있어, 바꾼 내용은 이미지 방침과 승인 기록에 남습니다.</span>
       </div>
     </div>
   );

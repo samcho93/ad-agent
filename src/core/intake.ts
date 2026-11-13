@@ -4,7 +4,39 @@ import { z } from "zod/v4";
 
 export const OBJECTIVES = ["매출", "문의·상담", "회원가입", "사이트·매장 방문"] as const;
 export const ASSET_OPTIONS = ["제품 사진", "매장·공간 사진", "로고 파일", "없음"] as const;
-export const CHANNEL_OPTIONS = ["인스타그램·페이스북", "네이버", "카카오"] as const;
+export const CHANNEL_OPTIONS = ["인스타그램·페이스북", "네이버", "카카오", "기타"] as const;
+export type Channel = (typeof CHANNEL_OPTIONS)[number];
+
+/** "1080x1350", "1080×1350", "1080 * 1350" → { w, h }. 50~4000 픽셀만 */
+export function parseSizeText(t: string): { w: number; h: number } | null {
+  const m = /^\s*(\d{2,4})\s*[x×X*]\s*(\d{2,4})\s*$/.exec(t);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  return w >= 50 && h >= 50 && w <= 4000 && h <= 4000 ? { w, h } : null;
+}
+
+/**
+ * 11번 매체: 대표 매체 1개(+기타 입력), 사이즈·용량 한도는 선택.
+ * 예전 답변 파일({ channels: [...] })도 읽는다: 첫 매체를 대표로, 나머지는 기타 메모로.
+ */
+const mediaAnswer = z.preprocess(
+  (v) => {
+    const o = (v ?? {}) as Record<string, unknown>;
+    if (Array.isArray(o.channels) && o.primary === undefined) {
+      const ch = o.channels.filter((c): c is string => typeof c === "string");
+      return { primary: ch[0] ?? null, other: ch.slice(1).length ? `함께 고른 매체: ${ch.slice(1).join(", ")}` : "", size: "", maxKB: null, unknown: o.unknown ?? false };
+    }
+    return o;
+  },
+  z.object({
+    primary: z.enum(CHANNEL_OPTIONS).nullable().default(null),
+    other: z.string().default(""),
+    size: z.string().default("").refine((t) => !t.trim() || parseSizeText(t) !== null, { message: "사이즈는 가로x세로 픽셀로 적어 주세요 (예: 1080x1350)" }),
+    maxKB: z.number().positive().max(100000).nullable().default(null),
+    unknown: z.boolean().default(false),
+  }),
+);
 
 export const UNKNOWN_LABEL = "모르겠음";
 
@@ -20,6 +52,8 @@ export const IntakeSchema = z.object({
     privacy: z.literal(true),
     portfolio: z.boolean(),
     consentedAt: z.string(),
+    /** 동의할 때 보여 준 안내 문구 판 (문구가 바뀌어도 무엇에 동의했는지 알 수 있게) */
+    noticeVersion: z.string().optional(),
   }),
   contact: z.object({
     company: z.string().trim().min(1),
@@ -43,7 +77,7 @@ export const IntakeSchema = z.object({
     "8": z.object({ likes: z.string().default(""), dislikes: z.string().default(""), unknown: unknownFlag }),
     "9": z.object({ hasProduct: z.boolean() }),
     "10": z.object({ assets: z.array(z.enum(ASSET_OPTIONS)).default([]), text: z.string().default(""), unknown: unknownFlag }),
-    "11": z.object({ channels: z.array(z.enum(CHANNEL_OPTIONS)).default([]), unknown: unknownFlag }),
+    "11": mediaAnswer,
   }),
 });
 
@@ -63,7 +97,7 @@ export const QUESTIONS: { no: QuestionNo; title: string; help?: string; unknownA
   { no: 8, title: "마음에 드는 광고와 싫은 광고가 있나요?", help: "선택 질문이에요. 건너뛰셔도 돼요.", unknownAllowed: true, optional: true },
   { no: 9, title: "광고에 보여 줄 제품이 있나요?", help: "쿠키, 화장품처럼 손에 잡히는 물건이면 '있음', 상담·서비스·가게 자체를 알리면 '없음'이에요.", unknownAllowed: false },
   { no: 10, title: "광고에 쓸 사진과 로고가 있나요?", help: "있는 것을 모두 골라 주세요. 파일은 다음 단계에서 받아요.", unknownAllowed: true },
-  { no: 11, title: "어디에 광고하고 싶으세요?", help: "여러 개 골라도 돼요.", unknownAllowed: true },
+  { no: 11, title: "가장 먼저 광고할 곳은 어디인가요?", help: "대표 매체 하나만 골라 주세요. 다른 매체와 사이즈는 시안을 고른 뒤 추가할 수 있어요.", unknownAllowed: true },
 ];
 
 /** 질문 번호별 "모르겠음" 여부 */
@@ -100,7 +134,7 @@ export function intakeForModel(intake: Intake): string {
     `8번 마음에 드는 광고: ${u(a["8"].unknown, a["8"].likes)} / 싫은 광고: ${u(a["8"].unknown, a["8"].dislikes)}`,
     `9번 보여 줄 제품: ${a["9"].hasProduct ? "있음" : "없음"}`,
     `10번 사진·로고: ${u(a["10"].unknown, [...a["10"].assets, a["10"].text].filter(Boolean).join(", "))}`,
-    `11번 매체: ${u(a["11"].unknown, a["11"].channels.join(", "))}`,
+    `11번 매체: ${u(a["11"].unknown, mediaText(a["11"]))}`,
   ];
   return lines.join("\n");
 }
@@ -120,7 +154,7 @@ export function intakeCorpus(intake: Intake): string {
     a["7"].unknown ? "" : `${a["7"].must} ${a["7"].avoid}`,
     a["8"].unknown ? "" : `${a["8"].likes} ${a["8"].dislikes}`,
     a["10"].unknown ? "" : `${a["10"].assets.join(" ")} ${a["10"].text}`,
-    a["11"].unknown ? "" : a["11"].channels.join(" "),
+    a["11"].unknown ? "" : mediaText(a["11"]),
   ].join("\n");
 }
 
@@ -133,3 +167,29 @@ export function bannedPhrases(intake: Intake): string[] {
     .map((s) => s.trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, ""))
     .filter((s) => s.length >= 2 && !/^(없음|없어요|없습니다)$/.test(s));
 }
+
+/** 11번 답을 한 줄로 */
+export function mediaText(m: Intake["answers"]["11"]): string {
+  const main = m.primary === "기타" ? m.other.trim() || "기타" : m.primary ?? "";
+  const extra = m.primary !== "기타" && m.other.trim() ? ` (${m.other.trim()})` : "";
+  return [main + extra, m.size.trim() ? `사이즈 ${m.size.trim()}` : "", m.maxKB ? `용량 한도 ${m.maxKB}KB` : ""].filter(Boolean).join(", ");
+}
+
+/**
+ * 개인정보 수집·이용 안내 (초안). 구체 문구는 광고대행 계약서의 개인정보·보관 조항과 관련 법령을 확인한 뒤 확정한다.
+ * 보관 기간은 정하지 않는다 (docs/decisions.md 미정 항목).
+ */
+export const PRIVACY_NOTICE = {
+  version: "draft-2026-11-13",
+  draft: true,
+  items: [
+    { label: "수집 항목", text: "상호, 담당자 이름, 연락처, 질문지 답, 보내 주신 사진·로고" },
+    { label: "이용 목적", text: "광고 시안 제작 상담, 시안 전달과 수정 협의, 연락" },
+    {
+      label: "전송될 수 있는 곳",
+      text: "담당자가 쓰는 AI 모델 서비스(Anthropic Claude, OpenAI, Google Gemini 중) — 상호와 질문지 답, 시안 이미지만 보내고 담당자 이름·연락처는 보내지 않아요. 이미지 작업에 쓰는 디자인 도구(Figma)",
+    },
+    { label: "보관 기간", text: "계약·결제 관련: 미정 / 연락처: 미정 (계약서와 관련 법령 확인 후 안내)" },
+    { label: "동의하지 않을 권리", text: "동의하지 않으셔도 돼요. 다만 필수 항목에 동의하지 않으시면 질문지를 진행할 수 없어요." },
+  ],
+} as const;

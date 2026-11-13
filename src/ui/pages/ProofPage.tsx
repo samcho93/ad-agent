@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SIZES, SIZE_LABEL, type SizeKey, type Variant } from "@/core/compose";
+import { SIZES, SIZE_LABEL, type BaseSize, type Variant } from "@/core/compose";
 import { ProofFileSchema, REVISION_KINDS, type ProofAnswer, type ProofFile, type RevisionKind } from "@/core/delivery";
 import { downloadJson, errMsg, pickJsonFile } from "../app";
 
@@ -13,7 +13,7 @@ type Choice = "A" | "B" | "revise";
 export function ProofPage() {
   const [proof, setProof] = useState<ProofFile | null>(null);
   const [err, setErr] = useState("");
-  const [size, setSize] = useState<SizeKey>("1080x1080");
+  const [size, setSize] = useState<BaseSize>("1080x1080");
   const [choice, setChoice] = useState<Choice | null>(null);
   const [base, setBase] = useState<Variant | null>(null);
   const [requests, setRequests] = useState<Partial<Record<RevisionKind, string>>>({});
