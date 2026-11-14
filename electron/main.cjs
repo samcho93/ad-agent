@@ -2,8 +2,10 @@
 // 웹 배포본과 같은 화면(dist/)을 app://ad-agent/ 주소로 띄운다.
 //  - 케이스 데이터·키는 웹판과 같이 이 PC 안(앱의 IndexedDB 또는 고른 폴더)에만 저장한다. 서버로 보내지 않는다.
 //  - file:// 대신 전용 주소를 쓰는 이유: IndexedDB·폴더 저장소·LLM API 호출(CORS)이 보통 웹 주소처럼 동작해야 한다.
-//  - Claude CLI 브리지는 웹판과 같이 따로 실행한다 (브리지 0.2.2 이상이 이 주소를 허용).
-const { app, BrowserWindow, Menu, net, protocol, shell } = require("electron");
+//  - Claude CLI: 이 앱은 브리지 없이 이 PC의 claude 를 직접 실행한다 (설정의 "이 PC의 Claude CLI").
+//    실행 코드는 bridge/bridge.mjs 의 것을 그대로 불러 쓴다. 화면에는 preload.cjs 의 두 함수만 연다.
+const { app, BrowserWindow, Menu, ipcMain, net, protocol, shell } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -33,6 +35,78 @@ function serveDist() {
 
 const isExternal = (u) => /^https?:\/\//i.test(u);
 
+/* ---------------- 이 PC의 Claude CLI (브리지 없이) ---------------- */
+
+let bridgeCore = null;
+const core = () => (bridgeCore ??= import(pathToFileURL(path.join(__dirname, "..", "bridge", "bridge.mjs")).href));
+const MAX_RUNNING = 2;
+let running = 0;
+
+/** 화면에서 넘어온 claude 경로: 직접 지정한 경우 실제 claude 실행 파일만 받는다 (다른 프로그램 실행 방지) */
+function checkedPath(p) {
+  const v = typeof p === "string" ? p.trim().replace(/^"|"$/g, "") : "";
+  if (!v) return "";
+  if (!path.isAbsolute(v)) throw new Error("claude 경로는 전체 경로로 적어 주세요 (예: C:\\Users\\이름\\.local\\bin\\claude.exe)");
+  const base = path.basename(v).toLowerCase();
+  if (base === "claude.cmd" || base === "claude.ps1") throw new Error("claude.cmd 가 아니라 실제 실행 파일(claude.exe)의 경로를 적어 주세요");
+  if (!/^claude(\.exe)?$/.test(base)) throw new Error("claude 실행 파일(claude 또는 claude.exe)의 경로만 쓸 수 있습니다");
+  let st;
+  try {
+    st = fs.statSync(v);
+  } catch {
+    throw new Error(`파일이 없습니다: ${v}`);
+  }
+  if (!st.isFile()) throw new Error(`파일이 아닙니다: ${v}`);
+  return v;
+}
+
+async function findClaude(p) {
+  const m = await core();
+  const bin = m.resolveClaude(checkedPath(p) || undefined);
+  if (!bin) throw new Error("이 PC에서 claude(Claude Code CLI)를 찾지 못했습니다. Claude Code를 설치·로그인하거나, 설정에 claude.exe 경로를 적어 주세요");
+  return { m, bin };
+}
+
+const fromApp = (e) => {
+  const url = e.senderFrame?.url ?? "";
+  return url.startsWith(`${SCHEME}://${HOST}/`);
+};
+
+// 오류는 { ok: false, error } 로 돌려준다 (ipc 의 긴 오류 문구 대신 쉬운 말이 화면에 나오게)
+const safe = (fn) => async (e, arg) => {
+  if (!fromApp(e)) return { ok: false, error: "허용되지 않은 화면" };
+  try {
+    return { ok: true, ...(await fn(arg)) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+};
+
+ipcMain.handle(
+  "claude:check",
+  safe(async (p) => {
+    const { m, bin } = await findClaude(p);
+    return { path: bin, version: await m.claudeVersion(bin), core: m.VERSION };
+  }),
+);
+
+ipcMain.handle(
+  "claude:generate",
+  safe(async (req) => {
+    const { m, bin } = await findClaude(req?.claudePath);
+    const body = { system: req?.system, user: req?.user, jsonSchema: req?.jsonSchema, model: req?.model, effort: req?.effort, ...(req?.images ? { images: req.images } : {}) };
+    const bad = m.validateGenerate(body);
+    if (bad) throw new Error(bad);
+    if (running >= MAX_RUNNING) throw new Error("이미 생성 중인 작업이 있습니다. 잠시 후 다시 시도하세요");
+    running++;
+    try {
+      return { result: await m.runClaude(bin, body) };
+    } finally {
+      running--;
+    }
+  }),
+);
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -42,7 +116,7 @@ function createWindow() {
     title: `광고 시안 에이전트 v${app.getVersion()}`,
     icon: path.join(__dirname, "..", "build", "icon.png"),
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false, preload: path.join(__dirname, "preload.cjs") },
   });
   // 바깥 주소(도움말의 GitHub 링크, Figma 등)는 기본 브라우저로 연다
   win.webContents.setWindowOpenHandler(({ url }) => {

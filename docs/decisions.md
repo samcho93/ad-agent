@@ -189,3 +189,12 @@
 - 오류 안내: 키 오류, 결제(빌링) 필요, 권한, 모델 없음, 한도(429), 안전 필터·이미지 없음(모델이 글만 돌려준 경우)을 쉬운 말로.
 - 시험: 단위 테스트(요청 구성·참조 사진 선택·저장·기록·막는 조건·부분 실패), 가짜 모델 모드 화면 확인(가짜 이미지 2장 저장), 잘못된 키로 실제 Gemini API 호출 → 키 오류 안내 확인.
 - 확인 필요: 실제 키로 생성 품질(글자·로고가 생기지 않는지, 참조 사진을 넣었을 때 제품이 다시 그려지는지), 장당 비용·무료 한도, 결제 없는 키의 동작, 생성 이미지의 상업 이용 조건(Google 약관), SynthID 워터마크가 매체 심사에 주는 영향.
+
+## 데스크톱: 브리지 없이 Claude CLI (2026-11-15)
+- 요청: "실행파일 형식에서는 Claude CLI가 바로 연결이 안되나?" → 데스크톱 앱은 Node 를 품고 있어 브리지 없이 직접 `claude -p` 를 실행하게 했다 (0.9.0). 웹판은 그대로 브리지를 쓴다.
+- 설정 → LLM 연결 → **이 PC의 Claude CLI (데스크톱)** (`provider: "desktop"`, 데스크톱 앱에서만 보임). 모델은 브리지와 같은 기본값(`claude-opus-5-5`), 키·연결 코드 없음, claude 경로(`llm.claudePath`)는 비우면 자동으로 찾는다.
+- 구조: `electron/preload.cjs` 가 `window.adAgentDesktop.claude.{check, generate}` 만 열고(다른 Node 기능 없음), 메인 프로세스가 요청한 화면이 `app://ad-agent/` 인지 확인한 뒤 `bridge/bridge.mjs` 의 공용 함수로 실행한다. 브리지와 같은 요청 검사(모델 이름 형식·추론 강도·이미지 형식/개수/크기), 같은 실행 방식(도구 끔, 빈 임시 폴더, 10분 제한), 동시에 2개까지. 결과는 브리지와 같은 함수(`claudeCliResult`)로 스키마를 다시 검증한다.
+- 브리지 0.3.0: 불러오기만 하면 아무것도 실행하지 않게(`node bridge.mjs` 로 실행할 때만 서버) 나눴다. claude 찾기에 `%APPDATA%\npm`, `~/.local/bin`, `%LOCALAPPDATA%\Programs\claude`, (mac/linux) `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local` 을 더했다. 첫 줄 `#!/usr/bin/env node` 는 테스트에서 불러오려고 뺐다 (`node bridge.mjs` 로 실행하는 데는 영향 없음).
+- 직접 적는 claude 경로: 전체 경로이고 이름이 `claude`/`claude.exe` 인 실제 파일만 받는다 (`claude.cmd` 는 shell 이 필요해 받지 않음). 화면 쪽 코드가 다른 프로그램을 실행하지 못하게 하려는 것.
+- 시험: 단위 테스트(웹판에서는 막음, 요청 모양, 결과 검증, 오류·이미지 누락, 브리지 공용 코드), 브리지 서버 단독 실행(health 0.3.0), Electron 에서 실제 claude 로 구조화 생성 1회 성공, 경로 검사(cmd.exe·claude.cmd·없는 파일 거부).
+- 확인 필요: 설치판을 바탕화면 아이콘으로 실행했을 때 다른 PC(네이티브 설치·npm 설치·mac)에서 claude 를 찾는지, 이미지 검수(시안 6장)의 실제 소요 시간.

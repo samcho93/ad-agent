@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { currentModel, maskSecret, type Effort, type LlmProvider, type ModelProvider, type Secrets, type Settings } from "@/core/settings";
 import { normalizeBridgeUrl } from "@/llm/bridgeGenerator";
+import { isDesktopApp } from "@/llm/desktopGenerator";
 import { PROVIDER_LABEL, SECRET_FOR, checkConnection } from "@/llm/select";
 import { folderSupported, forgetFolder, pickFolder } from "@/storage/folder";
 import { clearSecrets, isEncrypted } from "@/storage/prefs";
@@ -133,11 +134,12 @@ export function SettingsPage() {
       <div className="card stack">
         <h3>LLM 연결</h3>
         <div className="stack small">
-          {([...KEY_PROVIDERS, "bridge", ...(import.meta.env.MODE === "fake" ? ["fake"] : [])] as LlmProvider[]).map((p) => (
+          {([...(isDesktopApp() ? ["desktop"] : []), ...KEY_PROVIDERS, "bridge", ...(import.meta.env.MODE === "fake" ? ["fake"] : [])] as LlmProvider[]).map((p) => (
             <label key={p} className="row">
               <input type="radio" name="provider" checked={provider === p} onChange={() => setLlm({ provider: p })} />
               {PROVIDER_LABEL[p]}
               {p === "bridge" && <span className="muted">(Claude Code 사용자)</span>}
+              {p === "desktop" && <span className="muted">(Claude Code 사용자, 브리지 실행 없이)</span>}
             </label>
           ))}
         </div>
@@ -188,6 +190,19 @@ export function SettingsPage() {
           </div>
         )}
 
+        {provider === "desktop" && (
+          <div className="stack">
+            <div className="small card" style={{ background: "var(--bg)" }}>
+              이 데스크톱 앱이 이 PC의 Claude Code CLI(<code>claude</code>)를 직접 실행합니다. 브리지 실행·연결 코드가 필요 없고, 네트워크 포트도 열지 않습니다.
+              <div className="muted" style={{ marginTop: 6 }}>Claude Code가 설치·로그인되어 있어야 합니다 (생성은 그 로그인/구독으로 실행). "연결 확인"으로 찾았는지 확인하세요.</div>
+            </div>
+            <label className="field">
+              <span>claude 실행 파일 경로 (선택, 비우면 자동으로 찾음)</span>
+              <input type="text" placeholder="예: C:\Users\이름\.local\bin\claude.exe" value={draft.llm.claudePath} onChange={(e) => setLlm({ claudePath: e.target.value })} />
+            </label>
+          </div>
+        )}
+
         {provider !== "fake" && (
           <div className="row">
             <label className="field" style={{ flex: 1, minWidth: 220 }}>
@@ -207,7 +222,7 @@ export function SettingsPage() {
                 {EFFORTS.map((x) => <option key={x}>{x}</option>)}
               </select>
             </label>
-            {provider !== "bridge" && (
+            {provider !== "bridge" && provider !== "desktop" && (
               <label className="field">
                 <span>최대 토큰</span>
                 <input type="text" inputMode="numeric" style={{ width: 110 }} value={draft.llm.maxTokens} onChange={(e) => setLlm({ maxTokens: Number(e.target.value.replace(/\D/g, "")) || 0 })} />

@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import type { Effort } from "@/core/settings";
-import { GenerationError, type Generator } from "./generator";
+import { GenerationError, type Generator, type StructuredRequest, type StructuredResult } from "./generator";
 
 export interface BridgeOptions {
   url: string; // 예: http://127.0.0.1:8787
@@ -57,18 +57,23 @@ export function createBridgeGenerator(opts: BridgeOptions): Generator {
     if (req.images?.length && j.images_seen !== req.images.length) {
       throw new GenerationError("이 브리지 버전은 이미지 검수를 지원하지 않습니다. 브리지 파일을 새로 받아 다시 실행하세요 (0.2.0 이상)");
     }
-    const parsed = req.schema.safeParse(j.structured_output);
-    if (!parsed.success) {
-      throw new GenerationError(`모델 출력이 스키마와 다릅니다: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
-    }
-    const usage = (j.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
-    return {
-      data: parsed.data,
-      model: `${String(j.model ?? opts.model)} (claude-cli)`,
-      stopReason: (j.stop_reason as string | null) ?? null,
-      usage: { input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0 },
-      costUsd: typeof j.cost_usd === "number" ? j.cost_usd : undefined,
-    };
+    return claudeCliResult(req, j, opts.model);
+  };
+}
+
+/** claude CLI 실행 결과(브리지·데스크톱 공통 형식) → 생성 결과. 출력은 스키마로 다시 검증한다 */
+export function claudeCliResult<S extends z.ZodType>(req: StructuredRequest<S>, j: Record<string, unknown>, model: string): StructuredResult<z.infer<S>> {
+  const parsed = req.schema.safeParse(j.structured_output);
+  if (!parsed.success) {
+    throw new GenerationError(`모델 출력이 스키마와 다릅니다: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
+  }
+  const usage = (j.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
+  return {
+    data: parsed.data,
+    model: `${String(j.model ?? model)} (claude-cli)`,
+    stopReason: (j.stop_reason as string | null) ?? null,
+    usage: { input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0 },
+    costUsd: typeof j.cost_usd === "number" ? j.cost_usd : undefined,
   };
 }
 

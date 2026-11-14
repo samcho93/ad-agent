@@ -39,6 +39,7 @@ AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 
 1. **설정 → LLM 연결**에서 방식을 고릅니다.
    - 일반 사용자: 본인의 API 키 (Anthropic Claude / OpenAI / Google Gemini). **연결 확인**을 누르면 쓸 수 있는 모델 목록이 나오고, 거기서 모델을 고릅니다.
    - Claude Code 사용자: 이 PC에서 브리지를 실행하고 연결 코드를 넣습니다 (아래 "Claude CLI 브리지").
+   - 데스크톱 실행파일(0.9.0~)에서는 **이 PC의 Claude CLI (데스크톱)** 을 고르고 **연결 확인**만 누르면 됩니다. 브리지 실행·연결 코드가 필요 없습니다.
 2. 필요하면 **Figma 개인 액세스 토큰**(Figma 설정 → 보안 탭)을 넣습니다. 프레임 링크로 이미지를 가져올 때만 씁니다.
    - (선택) **이미지 생성 (Gemini)**: Gemini API 키를 넣고 **연결 확인** → 이미지 모델을 고르면, 이미지 단계에서 프롬프트를 복사하지 않고 앱에서 바로 이미지를 받습니다. LLM 연결과 따로 설정하므로 브리프는 Claude·브리지로, 이미지만 Gemini로 만들 수 있습니다. 결제(빌링)가 켜진 키가 필요할 수 있고 장당 비용은 Google 요금표에서 확인하세요.
 3. 키는 비밀번호로 잠글 수 있습니다. 저장 위치는 브라우저 저장소 또는 (Chrome·Edge) PC 폴더 중 고릅니다.
@@ -97,7 +98,8 @@ AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 
 | Anthropic API 키 | 일반 사용자 | 구조화된 출력(JSON 스키마), adaptive thinking |
 | OpenAI API 키 | 일반 사용자 | Responses API, json_schema strict |
 | Gemini API 키 | 일반 사용자 | responseJsonSchema |
-| Claude CLI 브리지 | Claude Code 사용자 | 본인 Claude Code 로그인으로 `claude -p` 실행. 이미지 검수 지원(0.2.0) |
+| Claude CLI 브리지 | Claude Code 사용자 (웹판) | 본인 Claude Code 로그인으로 `claude -p` 실행. 이미지 검수 지원(0.2.0) |
+| 이 PC의 Claude CLI | Claude Code 사용자 (데스크톱 실행파일) | 브리지 없이 앱이 `claude -p` 를 직접 실행 (브리지와 같은 코드). 포트를 열지 않음 |
 | 가짜 모델 | 개발·시험 | `npm run dev:fake`, 키 없이 화면 시험 |
 
 어느 방식이든 결과는 같은 zod 스키마로 다시 검증하고, 출처 태그·추정 표시·사실 검사는 **코드가** 붙입니다.
@@ -224,7 +226,7 @@ Claude Code가 설치·로그인된 PC에서 (Node 18 이상, 의존성 없음):
 node bridge/bridge.mjs
 ```
 - 화면에 나오는 주소와 **연결 코드**를 웹 앱 설정에 넣습니다. 코드는 `~/.ad-agent-bridge.json` 에 저장됩니다 (`--new-code` 로 새로 만들기).
-- 127.0.0.1 에서만 열리고, 허용된 웹 주소(Cloudflare Pages, GitHub Pages, irodmas.com, localhost, 데스크톱 실행파일 `app://ad-agent`)에서 온 요청만 받습니다. 데스크톱 실행파일에서 쓰려면 브리지 0.2.2 이상이 필요합니다. 다른 주소에서 쓰려면 `--origin https://...`.
+- 127.0.0.1 에서만 열리고, 허용된 웹 주소(Cloudflare Pages, GitHub Pages, irodmas.com, localhost, 데스크톱 실행파일 `app://ad-agent`)에서 온 요청만 받습니다. 데스크톱 실행파일은 0.9.0부터 브리지 없이 바로 연결되므로(설정 → 이 PC의 Claude CLI) 브리지는 웹판용입니다. 다른 주소에서 쓰려면 `--origin https://...`.
 - 하는 일은 `claude -p --json-schema` 구조화 생성 하나뿐입니다(도구 없음). 검수 때는 시안 이미지도 함께 넘깁니다(0.2.0부터). 프롬프트와 이미지는 기록하지 않습니다.
 - Chrome에서 처음 연결할 때 "로컬 네트워크 접근" 허용을 물을 수 있습니다.
 
@@ -246,6 +248,7 @@ npm run build      # dist/ (배포본에는 CSP가 들어간다)
 - **GitHub Pages**: `main` 에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드 후 올립니다.
 - **데스크톱 실행파일 (Electron)**: `npm run dist:win` → `release/` 에 `AdAgent-Setup-<버전>.exe`(NSIS 설치판), `AdAgent-Portable-<버전>.exe`. 만든 파일은 GitHub Release(태그 `v<버전>`)에 올리고, SamStudy 허브에는 프로그램으로 등록합니다. `npm run electron` 은 빌드 후 바로 실행합니다.
   - `electron/main.cjs` 가 웹판과 같은 `dist/` 를 `app://ad-agent/` 주소로 띄웁니다 (IndexedDB·폴더 저장소·LLM API 호출이 웹 주소처럼 동작). 바깥 링크는 기본 브라우저로 엽니다.
+  - **이 PC의 Claude CLI**: `electron/preload.cjs` 가 화면에 `claude.check`·`claude.generate` 두 함수만 열고, 메인 프로세스가 `bridge/bridge.mjs` 의 `resolveClaude`·`validateGenerate`·`runClaude` 를 그대로 불러 실행합니다(브리지는 `node bridge.mjs` 로 실행할 때만 서버를 엶). 직접 적은 claude 경로는 전체 경로의 `claude`/`claude.exe` 실행 파일만 받습니다. 바탕화면에서 실행해 PATH 가 짧아도 `~/.local/bin`, `%APPDATA%\npm` 등 흔한 설치 위치를 찾아봅니다.
   - 코드 서명은 하지 않아 처음 실행할 때 Windows SmartScreen 경고가 나올 수 있습니다 ("추가 정보 → 실행").
 
 | 경로 | 내용 |

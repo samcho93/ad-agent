@@ -5,9 +5,10 @@ import type { ProductRule } from "./productRules";
  * LLM 연결 방식.
  * - API 키: "anthropic" | "openai" | "gemini" (사용자 본인 키, 브라우저에서 직접 호출)
  * - "bridge": Claude Code 사용자의 로컬 CLI 브리지
+ * - "desktop": 데스크톱 실행파일에서 이 PC의 claude CLI 를 브리지 없이 직접 실행
  * - "fake": 개발용 가짜 모델
  */
-export type LlmProvider = "anthropic" | "openai" | "gemini" | "bridge" | "fake";
+export type LlmProvider = "anthropic" | "openai" | "gemini" | "bridge" | "desktop" | "fake";
 export type ModelProvider = Exclude<LlmProvider, "fake">;
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -20,6 +21,8 @@ export interface Settings {
     maxTokens: number;
     /** Claude CLI 브리지 주소 (이 PC에서 실행, 127.0.0.1 전용) */
     bridgeUrl: string;
+    /** 데스크톱: claude 실행 파일 경로 (비우면 자동으로 찾음) */
+    claudePath: string;
   };
   revision: { includedCount: string | number; includedCountRange: string };
   /** 매체별 파일 용량 한도(KB). 근거가 없어 기본은 "확인 필요" (숫자를 넣으면 검수에서 비교) */
@@ -64,7 +67,7 @@ export function mergeSettings(saved: Partial<Settings> | null | undefined): Sett
   const legacy = saved.llm as (Partial<Settings["llm"]> & { model?: string }) | undefined;
   const models = { ...DEFAULT_SETTINGS.llm.models, ...(legacy?.models ?? {}) };
   if (legacy?.model && !legacy.models) {
-    if (legacy.provider === "anthropic" || legacy.provider === "bridge") models[legacy.provider] = legacy.model;
+    if (legacy.provider === "anthropic" || legacy.provider === "bridge" || legacy.provider === "desktop") models[legacy.provider] = legacy.model;
   }
   const { model: _drop, ...llmRest } = legacy ?? {};
   return {

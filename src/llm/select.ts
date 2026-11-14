@@ -1,6 +1,7 @@
 import { currentModel, type LlmProvider, type Secrets, type Settings } from "@/core/settings";
 import { GenerationError, type Generator } from "./generator";
 import { createBridgeGenerator } from "./bridgeGenerator";
+import { checkDesktop, createDesktopGenerator } from "./desktopGenerator";
 import { devFakeGenerator } from "./fake";
 
 /** 첫 호출 때 SDK를 불러온다 (쓰지 않는 회사의 SDK는 내려받지 않게) */
@@ -24,6 +25,8 @@ export function createGenerator(settings: Settings, secrets: Secrets): Generator
       return lazy(async () => (await import("./geminiGenerator")).createGeminiGenerator({ apiKey: secrets.geminiApiKey ?? "", ...common }));
     case "bridge":
       return createBridgeGenerator({ url: l.bridgeUrl, token: secrets.bridgeToken ?? "", model, effort: l.effort });
+    case "desktop":
+      return createDesktopGenerator({ model, effort: l.effort, claudePath: l.claudePath });
     case "fake":
       return devFakeGenerator();
   }
@@ -34,6 +37,7 @@ export const PROVIDER_LABEL: Record<LlmProvider, string> = {
   openai: "OpenAI API 키",
   gemini: "Google Gemini API 키",
   bridge: "Claude CLI 브리지",
+  desktop: "이 PC의 Claude CLI (데스크톱)",
   fake: "가짜 모델 (화면 시험용)",
 };
 
@@ -51,7 +55,7 @@ export const SECRET_FOR: Partial<Record<LlmProvider, keyof Secrets>> = {
  */
 export async function checkConnection(settings: Settings, secret: string): Promise<{ message: string; models: string[] }> {
   const l = settings.llm;
-  if (!secret && l.provider !== "fake") throw new GenerationError("키(또는 연결 코드)를 입력하세요");
+  if (!secret && l.provider !== "fake" && l.provider !== "desktop") throw new GenerationError("키(또는 연결 코드)를 입력하세요");
   switch (l.provider) {
     case "anthropic": {
       const m = await import("./anthropicGenerator");
@@ -70,6 +74,8 @@ export async function checkConnection(settings: Settings, secret: string): Promi
       const { checkBridge } = await import("./bridgeGenerator");
       return { message: await checkBridge(l.bridgeUrl, secret), models: [] };
     }
+    case "desktop":
+      return { message: await checkDesktop(l.claudePath), models: [] };
     case "fake":
       return { message: "가짜 모델은 연결이 필요 없습니다", models: [] };
   }

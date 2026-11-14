@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * 광고 시안 에이전트 — Claude CLI 브리지
  *
@@ -18,6 +17,9 @@
  * - 할 수 있는 일은 하나뿐: 받은 프롬프트(와 검수용 이미지)와 JSON 스키마로 `claude -p` 를 실행해 구조화된 결과를 돌려준다.
  *   도구는 모두 끈 상태(--tools "")로 실행하고, 임의 명령은 실행하지 않는다.
  * - 프롬프트와 결과는 기록하지 않는다. 요청 시각, 경로, 상태 코드만 화면에 찍는다.
+ *
+ * 데스크톱 실행파일(Electron)은 서버 없이 이 파일의 resolveClaude / runClaude / validateGenerate 를 직접 불러 쓴다
+ * (같은 코드로 같은 결과). 그래서 이 파일은 불러오기만 하면 아무것도 실행하지 않고, `node bridge.mjs` 로 실행할 때만 서버를 연다.
  */
 import http from "node:http";
 import { spawn, execFile } from "node:child_process";
@@ -25,8 +27,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const VERSION = "0.2.2";
+export const VERSION = "0.3.0";
 const DEFAULT_ORIGINS = [
   "https://samcho93.github.io",
   "https://ad-agent-4k9.pages.dev", // Cloudflare Pages
@@ -46,82 +49,53 @@ const TIMEOUT_MS = 10 * 60 * 1000;
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const MODEL_RE = /^claude-[a-z0-9.-]{1,60}$/;
 
-/* ---------------- 인자 ---------------- */
-
-const argv = process.argv.slice(2);
-const opt = (name) => {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-};
-const allOpts = (name) => argv.flatMap((a, i) => (a === name && argv[i + 1] ? [argv[i + 1]] : []));
-
-if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("사용법: node bridge.mjs [--port 8787] [--origin <웹 주소>]... [--claude <claude 경로>] [--config <파일>] [--new-code]");
-  process.exit(0);
-}
-
-const PORT = Number(opt("--port") ?? process.env.AD_AGENT_BRIDGE_PORT ?? 8787);
-const ORIGINS = new Set([...DEFAULT_ORIGINS, ...allOpts("--origin").map((o) => o.replace(/\/+$/, ""))]);
-
-/* ---------------- 연결 코드 ---------------- */
-
-const CONFIG_FILE = opt("--config") ?? path.join(os.homedir(), ".ad-agent-bridge.json");
-
-function loadOrCreateCode() {
-  if (!argv.includes("--new-code")) {
-    try {
-      const c = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
-      if (typeof c.code === "string" && c.code.length >= 24) return c.code;
-    } catch {
-      /* 없으면 새로 만든다 */
-    }
-  }
-  const code = crypto.randomBytes(24).toString("base64url");
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify({ code, createdAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
-  return code;
-}
-const CODE = loadOrCreateCode();
-const CODE_BUF = Buffer.from(CODE);
-
-function codeOk(header) {
-  const m = /^Bearer\s+(.+)$/.exec(header ?? "");
-  if (!m) return false;
-  const given = Buffer.from(m[1].trim());
-  return given.length === CODE_BUF.length && crypto.timingSafeEqual(given, CODE_BUF);
-}
-
 /* ---------------- claude 실행 파일 찾기 ---------------- */
 
-function resolveClaude() {
-  const configured = opt("--claude") ?? process.env.AD_AGENT_CLAUDE_BIN;
-  if (configured) return configured;
-  if (process.platform !== "win32") return "claude";
-  // Windows의 npm 설치본은 claude.cmd 셔임이라, shell 없이 실행하려고 실제 exe를 찾는다
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
-    const exe = path.join(dir, "claude.exe");
-    if (fs.existsSync(exe)) return exe;
-    if (fs.existsSync(path.join(dir, "claude.cmd"))) {
-      const shimExe = path.join(dir, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-      if (fs.existsSync(shimExe)) return shimExe;
-    }
+const exists = (f) => {
+  try {
+    return fs.statSync(f).isFile();
+  } catch {
+    return false;
   }
-  const local = path.join(os.homedir(), ".local", "bin", "claude.exe");
-  if (fs.existsSync(local)) return local;
+};
+
+/**
+ * claude 실행 파일 경로. configured(직접 지정)가 있으면 그것을 쓴다.
+ * 바탕화면 아이콘으로 실행한 앱은 터미널의 PATH 를 못 볼 수 있어, 흔한 설치 위치도 찾아본다.
+ */
+export function resolveClaude(configured) {
+  if (configured) return configured;
+  const home = os.homedir();
+  const pathDirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+    const localAppData = process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
+    // Windows의 npm 설치본은 claude.cmd 셔임이라, shell 없이 실행하려고 실제 exe를 찾는다
+    for (const dir of [...pathDirs, path.join(home, ".local", "bin"), path.join(appData, "npm"), path.join(localAppData, "Programs", "claude")]) {
+      const exe = path.join(dir, "claude.exe");
+      if (exists(exe)) return exe;
+      const shimExe = path.join(dir, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+      if (exists(path.join(dir, "claude.cmd")) && exists(shimExe)) return shimExe;
+    }
+    return null;
+  }
+  for (const dir of [...pathDirs, path.join(home, ".local", "bin"), path.join(home, ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin"]) {
+    const bin = path.join(dir, "claude");
+    if (exists(bin)) return bin;
+  }
   return null;
 }
-const CLAUDE = resolveClaude();
 
-let claudeVersion = "확인 안 됨";
-if (CLAUDE) {
-  execFile(CLAUDE, ["--version"], { windowsHide: true, timeout: 20000 }, (err, out) => {
-    if (!err) claudeVersion = String(out).trim();
+/** claude --version (못 읽으면 "확인 안 됨") */
+export function claudeVersion(bin) {
+  return new Promise((resolve) => {
+    execFile(bin, ["--version"], { windowsHide: true, timeout: 20000 }, (err, out) => resolve(err ? "확인 안 됨" : String(out).trim()));
   });
 }
 
 /* ---------------- 생성 ---------------- */
 
-function runClaude({ system, user, jsonSchema, model, effort, images }) {
+export function runClaude(bin, { system, user, jsonSchema, model, effort, images }) {
   const withImages = Array.isArray(images) && images.length > 0;
   return new Promise((resolve, reject) => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "ad-agent-bridge-"));
@@ -140,7 +114,7 @@ function runClaude({ system, user, jsonSchema, model, effort, images }) {
       "--effort", effort,
     ];
     // 프로젝트 CLAUDE.md 등이 섞이지 않게 빈 임시 폴더에서 실행한다
-    const child = spawn(CLAUDE, args, { cwd: work, shell: false, windowsHide: true });
+    const child = spawn(bin, args, { cwd: work, shell: false, windowsHide: true });
     let stdout = "";
     let stderr = "";
     const cleanup = () => fs.rmSync(work, { recursive: true, force: true });
@@ -197,7 +171,7 @@ function runClaude({ system, user, jsonSchema, model, effort, images }) {
   });
 }
 
-function validateGenerate(b) {
+export function validateGenerate(b) {
   if (!b || typeof b !== "object") return "요청 형식이 아닙니다";
   if (typeof b.system !== "string" || b.system.length > 400_000) return "system 이 없거나 너무 깁니다";
   if (typeof b.user !== "string" || !b.user || b.user.length > 1_000_000) return "user 가 없거나 너무 깁니다";
@@ -215,129 +189,183 @@ function validateGenerate(b) {
   return null;
 }
 
-/* ---------------- HTTP ---------------- */
+/* ---------------- 서버 (node bridge.mjs 로 실행할 때만) ---------------- */
 
-let running = 0;
+function main() {
+  /* ---------------- 인자 ---------------- */
 
-function send(res, status, body, origin) {
-  const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", vary: "Origin" };
-  if (origin) headers["access-control-allow-origin"] = origin;
-  res.writeHead(status, headers);
-  res.end(JSON.stringify(body));
-}
+  const argv = process.argv.slice(2);
+  const opt = (name) => {
+    const i = argv.indexOf(name);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  const allOpts = (name) => argv.flatMap((a, i) => (a === name && argv[i + 1] ? [argv[i + 1]] : []));
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks = [];
-    req.on("data", (c) => {
-      size += c.length;
-      if (size > MAX_BODY) {
-        reject(new Error("요청이 너무 큽니다"));
-        req.destroy();
-      } else chunks.push(c);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log("사용법: node bridge.mjs [--port 8787] [--origin <웹 주소>]... [--claude <claude 경로>] [--config <파일>] [--new-code]");
+    process.exit(0);
+  }
+  const CLAUDE = resolveClaude(opt("--claude") ?? process.env.AD_AGENT_CLAUDE_BIN);
+  let claudeVer = "확인 안 됨";
+  if (CLAUDE) claudeVersion(CLAUDE).then((v) => (claudeVer = v));
+
+  const PORT = Number(opt("--port") ?? process.env.AD_AGENT_BRIDGE_PORT ?? 8787);
+  const ORIGINS = new Set([...DEFAULT_ORIGINS, ...allOpts("--origin").map((o) => o.replace(/\/+$/, ""))]);
+
+  /* ---------------- 연결 코드 ---------------- */
+
+  const CONFIG_FILE = opt("--config") ?? path.join(os.homedir(), ".ad-agent-bridge.json");
+
+  function loadOrCreateCode() {
+    if (!argv.includes("--new-code")) {
+      try {
+        const c = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+        if (typeof c.code === "string" && c.code.length >= 24) return c.code;
+      } catch {
+        /* 없으면 새로 만든다 */
+      }
+    }
+    const code = crypto.randomBytes(24).toString("base64url");
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ code, createdAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
+    return code;
+  }
+  const CODE = loadOrCreateCode();
+  const CODE_BUF = Buffer.from(CODE);
+
+  function codeOk(header) {
+    const m = /^Bearer\s+(.+)$/.exec(header ?? "");
+    if (!m) return false;
+    const given = Buffer.from(m[1].trim());
+    return given.length === CODE_BUF.length && crypto.timingSafeEqual(given, CODE_BUF);
+  }
+
+  /* ---------------- HTTP ---------------- */
+
+  let running = 0;
+
+  function send(res, status, body, origin) {
+    const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", vary: "Origin" };
+    if (origin) headers["access-control-allow-origin"] = origin;
+    res.writeHead(status, headers);
+    res.end(JSON.stringify(body));
+  }
+
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      let size = 0;
+      const chunks = [];
+      req.on("data", (c) => {
+        size += c.length;
+        if (size > MAX_BODY) {
+          reject(new Error("요청이 너무 큽니다"));
+          req.destroy();
+        } else chunks.push(c);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      req.on("error", reject);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+  }
+
+  const log = (req, status, started) =>
+    console.log(`${new Date().toISOString()}  ${req.method} ${req.url}  ${status}  ${Date.now() - started}ms`);
+
+  const server = http.createServer(async (req, res) => {
+    const started = Date.now();
+    const origin = req.headers.origin;
+    const allowedOrigin = origin && ORIGINS.has(origin) ? origin : null;
+
+    // DNS 리바인딩 방지: Host 는 이 PC 주소여야 한다
+    const host = String(req.headers.host ?? "");
+    if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) {
+      send(res, 403, { error: "허용되지 않은 Host" });
+      return log(req, 403, started);
+    }
+    // 브라우저 요청은 허용 목록의 웹 주소에서 온 것만 받는다 (Origin 이 없는 요청은 curl 등 로컬 도구)
+    if (origin && !allowedOrigin) {
+      send(res, 403, { error: `허용되지 않은 웹 주소: ${origin} (브리지 실행 시 --origin 으로 추가)` });
+      return log(req, 403, started);
+    }
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-origin": allowedOrigin ?? "",
+        "access-control-allow-methods": "GET, POST",
+        "access-control-allow-headers": "authorization, content-type",
+        // 공개 웹사이트 → 로컬 주소 요청 허용 (Chrome Private Network Access)
+        "access-control-allow-private-network": "true",
+        "access-control-max-age": "600",
+        vary: "Origin",
+      });
+      res.end();
+      return log(req, 204, started);
+    }
+
+    if (!codeOk(req.headers.authorization)) {
+      send(res, 401, { error: "연결 코드가 맞지 않습니다" }, allowedOrigin);
+      return log(req, 401, started);
+    }
+
+    try {
+      if (req.method === "GET" && req.url === "/v1/health") {
+        send(res, 200, { ok: true, version: VERSION, features: ["images"], claude: CLAUDE ? `claude ${claudeVer}` : "claude CLI 없음" }, allowedOrigin);
+        return log(req, 200, started);
+      }
+      if (req.method === "POST" && req.url === "/v1/generate") {
+        if (!CLAUDE) {
+          send(res, 500, { error: "claude CLI를 찾지 못했습니다 (--claude 로 경로 지정)" }, allowedOrigin);
+          return log(req, 500, started);
+        }
+        if (running >= MAX_CONCURRENT) {
+          send(res, 429, { error: "이미 생성 중인 작업이 있습니다. 잠시 후 다시 시도하세요" }, allowedOrigin);
+          return log(req, 429, started);
+        }
+        let body;
+        try {
+          body = JSON.parse(await readBody(req));
+        } catch (e) {
+          send(res, 400, { error: e instanceof Error ? e.message : "JSON이 아닙니다" }, allowedOrigin);
+          return log(req, 400, started);
+        }
+        const bad = validateGenerate(body);
+        if (bad) {
+          send(res, 400, { error: bad }, allowedOrigin);
+          return log(req, 400, started);
+        }
+        running++;
+        try {
+          const out = await runClaude(CLAUDE, body);
+          send(res, 200, out, allowedOrigin);
+          return log(req, 200, started);
+        } finally {
+          running--;
+        }
+      }
+      send(res, 404, { error: "없는 경로" }, allowedOrigin);
+      return log(req, 404, started);
+    } catch (e) {
+      send(res, 502, { error: e instanceof Error ? e.message : "오류" }, allowedOrigin);
+      return log(req, 502, started);
+    }
+  });
+
+  server.on("error", (e) => {
+    console.error(e.code === "EADDRINUSE" ? `포트 ${PORT} 를 이미 쓰고 있습니다. --port 로 다른 포트를 지정하세요.` : e.message);
+    process.exit(1);
+  });
+
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log("");
+    console.log(`  광고 시안 에이전트 — Claude CLI 브리지 ${VERSION}`);
+    console.log(`  주소:      http://127.0.0.1:${PORT}`);
+    console.log(`  연결 코드: ${CODE}`);
+    console.log(`  claude:    ${CLAUDE ?? "찾지 못함 (--claude <경로>)"}`);
+    console.log(`  허용 웹:   ${[...ORIGINS].join(", ")}`);
+    console.log("");
+    console.log("  웹 앱의 설정 > LLM 연결 > Claude CLI 브리지 에 주소와 연결 코드를 넣으세요.");
+    console.log("  끝내려면 Ctrl+C");
+    console.log("");
   });
 }
 
-const log = (req, status, started) =>
-  console.log(`${new Date().toISOString()}  ${req.method} ${req.url}  ${status}  ${Date.now() - started}ms`);
-
-const server = http.createServer(async (req, res) => {
-  const started = Date.now();
-  const origin = req.headers.origin;
-  const allowedOrigin = origin && ORIGINS.has(origin) ? origin : null;
-
-  // DNS 리바인딩 방지: Host 는 이 PC 주소여야 한다
-  const host = String(req.headers.host ?? "");
-  if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) {
-    send(res, 403, { error: "허용되지 않은 Host" });
-    return log(req, 403, started);
-  }
-  // 브라우저 요청은 허용 목록의 웹 주소에서 온 것만 받는다 (Origin 이 없는 요청은 curl 등 로컬 도구)
-  if (origin && !allowedOrigin) {
-    send(res, 403, { error: `허용되지 않은 웹 주소: ${origin} (브리지 실행 시 --origin 으로 추가)` });
-    return log(req, 403, started);
-  }
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": allowedOrigin ?? "",
-      "access-control-allow-methods": "GET, POST",
-      "access-control-allow-headers": "authorization, content-type",
-      // 공개 웹사이트 → 로컬 주소 요청 허용 (Chrome Private Network Access)
-      "access-control-allow-private-network": "true",
-      "access-control-max-age": "600",
-      vary: "Origin",
-    });
-    res.end();
-    return log(req, 204, started);
-  }
-
-  if (!codeOk(req.headers.authorization)) {
-    send(res, 401, { error: "연결 코드가 맞지 않습니다" }, allowedOrigin);
-    return log(req, 401, started);
-  }
-
-  try {
-    if (req.method === "GET" && req.url === "/v1/health") {
-      send(res, 200, { ok: true, version: VERSION, features: ["images"], claude: CLAUDE ? `claude ${claudeVersion}` : "claude CLI 없음" }, allowedOrigin);
-      return log(req, 200, started);
-    }
-    if (req.method === "POST" && req.url === "/v1/generate") {
-      if (!CLAUDE) {
-        send(res, 500, { error: "claude CLI를 찾지 못했습니다 (--claude 로 경로 지정)" }, allowedOrigin);
-        return log(req, 500, started);
-      }
-      if (running >= MAX_CONCURRENT) {
-        send(res, 429, { error: "이미 생성 중인 작업이 있습니다. 잠시 후 다시 시도하세요" }, allowedOrigin);
-        return log(req, 429, started);
-      }
-      let body;
-      try {
-        body = JSON.parse(await readBody(req));
-      } catch (e) {
-        send(res, 400, { error: e instanceof Error ? e.message : "JSON이 아닙니다" }, allowedOrigin);
-        return log(req, 400, started);
-      }
-      const bad = validateGenerate(body);
-      if (bad) {
-        send(res, 400, { error: bad }, allowedOrigin);
-        return log(req, 400, started);
-      }
-      running++;
-      try {
-        const out = await runClaude(body);
-        send(res, 200, out, allowedOrigin);
-        return log(req, 200, started);
-      } finally {
-        running--;
-      }
-    }
-    send(res, 404, { error: "없는 경로" }, allowedOrigin);
-    return log(req, 404, started);
-  } catch (e) {
-    send(res, 502, { error: e instanceof Error ? e.message : "오류" }, allowedOrigin);
-    return log(req, 502, started);
-  }
-});
-
-server.on("error", (e) => {
-  console.error(e.code === "EADDRINUSE" ? `포트 ${PORT} 를 이미 쓰고 있습니다. --port 로 다른 포트를 지정하세요.` : e.message);
-  process.exit(1);
-});
-
-server.listen(PORT, "127.0.0.1", () => {
-  console.log("");
-  console.log(`  광고 시안 에이전트 — Claude CLI 브리지 ${VERSION}`);
-  console.log(`  주소:      http://127.0.0.1:${PORT}`);
-  console.log(`  연결 코드: ${CODE}`);
-  console.log(`  claude:    ${CLAUDE ?? "찾지 못함 (--claude <경로>)"}`);
-  console.log(`  허용 웹:   ${[...ORIGINS].join(", ")}`);
-  console.log("");
-  console.log("  웹 앱의 설정 > LLM 연결 > Claude CLI 브리지 에 주소와 연결 코드를 넣으세요.");
-  console.log("  끝내려면 Ctrl+C");
-  console.log("");
-});
+const isMain = !!process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) main();
