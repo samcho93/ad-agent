@@ -6,6 +6,7 @@ import { folderSupported, forgetFolder, pickFolder } from "@/storage/folder";
 import { clearSecrets, isEncrypted } from "@/storage/prefs";
 import { errMsg, useApp } from "../app";
 import { ProductRulesEditor } from "./ProductRulesEditor";
+import { FAKE_IMAGE_MODEL, listGeminiImageModels } from "@/integrations/geminiImage";
 
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const KEY_PROVIDERS: ModelProvider[] = ["anthropic", "openai", "gemini"];
@@ -28,6 +29,10 @@ export function SettingsPage() {
   const [unlockPass, setUnlockPass] = useState("");
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [checking, setChecking] = useState(false);
+  const [imgModels, setImgModels] = useState<string[]>([]);
+  const [imgMsg, setImgMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [imgChecking, setImgChecking] = useState(false);
+  const isFake = import.meta.env.MODE === "fake";
 
   useEffect(() => setDraft(settings), [settings]);
   useEffect(() => {
@@ -89,6 +94,26 @@ export function SettingsPage() {
   }
 
   const list = modelList[provider] ?? [];
+  const imageModel = draft.imageGen.model;
+  const setImageModel = (m: string) => setDraft((d) => ({ ...d, imageGen: { ...d.imageGen, model: m.trim() } }));
+
+  async function checkImage() {
+    setImgMsg(null);
+    setImgChecking(true);
+    try {
+      const models = isFake ? [FAKE_IMAGE_MODEL] : await listGeminiImageModels(nextSecrets().geminiApiKey ?? "");
+      setImgModels(models);
+      setImgMsg(
+        models.length
+          ? { kind: "ok", text: `연결됨 (이미지 모델 ${models.length}개)${models.includes(imageModel) ? "" : ". 아래 목록에서 고르세요"}` }
+          : { kind: "err", text: "이 키로 쓸 수 있는 Gemini 이미지 모델이 없습니다 (결제 설정·지역을 확인하세요)" },
+      );
+    } catch (e) {
+      setImgMsg({ kind: "err", text: errMsg(e) });
+    } finally {
+      setImgChecking(false);
+    }
+  }
 
   return (
     <main className="narrow stack" style={{ maxWidth: 720 }}>
@@ -198,6 +223,44 @@ export function SettingsPage() {
         <div className="row">
           <button onClick={check} disabled={checking || locked}>{checking ? "확인 중…" : "연결 확인"}</button>
         </div>
+      </div>
+
+      <div className="card stack">
+        <h3>이미지 생성 (Gemini, 선택)</h3>
+        <p className="small muted">
+          이미지 단계에서 프롬프트를 Gemini 이미지 모델에 바로 보내 배경·장면 이미지를 받습니다. 쓰지 않으면 지금처럼 Figma 등에서 만들어 가져오면 됩니다.
+          위 LLM 연결과 따로 설정하므로 브리프는 Claude·브리지로 쓰고 이미지만 Gemini로 만들 수 있습니다.
+        </p>
+        <label className="field">
+          <span>Google Gemini API 키 (저장됨: {maskSecret(secrets.geminiApiKey)}){provider === "gemini" && " — 위 LLM 연결의 키와 같은 키"}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder="AIza… (바꿀 때만 입력)"
+            value={newSecret.geminiApiKey ?? ""}
+            onChange={(e) => setNewSecret((s) => ({ ...s, geminiApiKey: e.target.value }))}
+            disabled={locked}
+          />
+        </label>
+        <div className="row">
+          <label className="field" style={{ flex: 1, minWidth: 220 }}>
+            <span>이미지 모델 {imgModels.length > 0 && <>(목록 {imgModels.length}개)</>}</span>
+            {imgModels.length > 0 ? (
+              <select value={imgModels.includes(imageModel) ? imageModel : ""} onChange={(e) => setImageModel(e.target.value)} style={{ width: "100%" }}>
+                <option value="" disabled>이미지 모델을 고르세요</option>
+                {imgModels.map((m) => <option key={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input type="text" placeholder="연결 확인을 누르면 목록이 나옵니다" value={imageModel} onChange={(e) => setImageModel(e.target.value)} />
+            )}
+          </label>
+          <button onClick={checkImage} disabled={imgChecking || locked} style={{ alignSelf: "flex-end" }}>{imgChecking ? "확인 중…" : "연결 확인"}</button>
+        </div>
+        {imgMsg && <p className={`small ${imgMsg.kind === "err" ? "err" : "okc"}`} style={{ margin: 0 }}>{imgMsg.text}</p>}
+        <p className="small muted">
+          이미지 생성은 결제(빌링)가 켜진 키가 필요할 수 있고, 장당 비용·무료 한도는 Google 요금표에서 확인하세요(확인 필요). Gemini가 만든 이미지에는 보이지 않는 SynthID 워터마크가 들어갑니다.
+          광고주 제품 사진을 참조로 보낼 수 있으니 무료 등급보다 유료 등급 키를 권합니다.
+        </p>
       </div>
 
       <div className="card stack">

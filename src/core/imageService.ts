@@ -1,4 +1,5 @@
 import type { CaseService } from "./caseService";
+import { blobToRef, type ImageGenerator, type ImageRef } from "@/integrations/geminiImage";
 import { CaseError, reached } from "./caseService";
 import {
   type Asset,
@@ -142,6 +143,57 @@ export class ImageService {
   }
 
   /* ---------------- 이미지 ---------------- */
+
+  /**
+   * 앱에서 이미지 모델로 배경·장면 이미지를 직접 만든다 (Gemini).
+   * 프롬프트는 이 케이스에서 만든 것만 쓴다 (글자·로고 금지와 빈 공간 지시가 붙어 있음).
+   * 제품 사진은 "제품 사진을 참조로 넣어 생성"을 고른 경우에만 보낸다. 받은 이미지는 한 장씩 바로 저장·기록한다.
+   */
+  async generateImages(
+    id: string,
+    gen: ImageGenerator,
+    opts: { promptId: string; count: number; method: ImageMethod; referenceAssetIds?: string[]; toolName: (model: string) => string; onProgress?: (done: number, total: number) => void },
+    by: string,
+  ): Promise<{ items: ImageItem[]; notes: string[] }> {
+    await this.assertOpen(id);
+    if (!by.trim()) throw new CaseError("작업자 이름을 적어 주세요 (이미지 기록에 남습니다)");
+    const doc = await this.getDoc(id);
+    const prompt = doc.prompts.find((p) => p.id === opts.promptId);
+    if (!prompt) throw new CaseError("이 케이스에서 만든 이미지 프롬프트를 고르세요");
+    if (prompt.issues.some((i) => i.severity === "error")) throw new CaseError("검증 오류가 남은 프롬프트로는 생성하지 않습니다. 프롬프트를 다시 만드세요");
+    if (doc.policy?.route === "product_need_photo") throw new CaseError("제품 사진이 없어 이미지를 만들 수 없습니다. 광고주에게 사진을 요청하세요");
+    if (opts.method === "photo") throw new CaseError("'실제 사진'은 생성이 아닙니다. 사진은 직접 올리기로 넣으세요");
+    const count = Math.max(1, Math.min(4, Math.round(opts.count)));
+
+    const refIds = opts.method === "product_reference" ? opts.referenceAssetIds ?? [] : [];
+    const refs: ImageRef[] = [];
+    for (const aid of refIds.slice(0, 3)) {
+      const a = doc.assets.find((x) => x.id === aid && x.kind === "product");
+      if (!a) throw new CaseError("참조로 넣을 제품 사진을 고르세요 (자료에 올린 제품 사진)");
+      const blob = await this.store.readBlob(id, a.file);
+      if (!blob) throw new CaseError(`제품 사진 파일이 없습니다: ${a.originalName}`);
+      refs.push(await blobToRef(blob));
+    }
+    if (opts.method === "product_reference" && !refs.length) throw new CaseError("참조로 넣을 제품 사진을 고르세요 (자료에 올린 제품 사진)");
+
+    const items: ImageItem[] = [];
+    const notes: string[] = [];
+    for (let i = 0; i < count; i++) {
+      opts.onProgress?.(i, count);
+      const r = await gen({ prompt: prompt.promptEn, aspect: prompt.aspect, references: refs });
+      items.push(
+        await this.addImage(
+          id,
+          r.blob,
+          { source: "gemini", role: "scene", tool: opts.toolName(r.model), promptId: prompt.id, method: opts.method, referenceAssetIds: refIds.length ? refIds.slice(0, 3) : undefined },
+          by,
+        ),
+      );
+      if (r.note) notes.push(r.note);
+    }
+    opts.onProgress?.(count, count);
+    return { items, notes };
+  }
 
   /** 받은 이미지를 바로 저장하고 기록한다 */
   async addImage(

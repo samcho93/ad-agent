@@ -22,6 +22,9 @@
   "pricing": "미정",
   "privacyRetention": "미정 (계약·결제 / 연락처 항목별, 계약서·관련 법령 확인 후 확정)",
   "imageModel": "미정",
+  "imageGen": {
+    "model": ""
+  },
   "defaultVariants": 2,
   "composeBackend": "html",
   "productRules": []

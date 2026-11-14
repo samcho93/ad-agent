@@ -5,6 +5,7 @@ import { ASSET_KIND_LABEL, IMAGE_METHOD_LABEL, PHOTO_ROUTES, ROUTE_LABEL, applic
 import { generateImagePrompt } from "@/llm/imagePipeline";
 import { fetchFigmaFramePng } from "@/integrations/figma";
 import { CUTOUT_TOOL, removeBackground } from "@/integrations/cutout";
+import { createImageGenerator, imageToolName } from "@/integrations/geminiImage";
 import { errMsg, useApp } from "../app";
 
 const IMAGE_TYPES = "image/png,image/jpeg,image/webp";
@@ -52,10 +53,11 @@ const CHECKER: React.CSSProperties = {
 };
 
 /** 어떤 버튼에서 난 오류인지: 오류는 누른 버튼 바로 아래에 보여 준다 */
-type Area = "top" | "asset" | "prompt" | "import" | "cutout" | "gallery" | "complete";
+type Area = "top" | "asset" | "prompt" | "gen" | "import" | "cutout" | "gallery" | "complete";
 function areaOf(label: string): Area {
   if (label === "asset" || label === "rm") return "asset";
   if (label === "prompt") return "prompt";
+  if (label === "gen") return "gen";
   if (label === "figma" || label === "upload" || label === "paste") return "import";
   if (label.startsWith("cut:")) return "cutout";
   if (label.startsWith("item:")) return "gallery";
@@ -66,7 +68,7 @@ function areaOf(label: string): Area {
 export function ImagesSection({ caseId, name, status, onName, onChanged }: { caseId: string; name: string; status: string; onName: (v: string) => void; onChanged: () => void }) {
   const confirmed = reached(status as CaseStatus, "images_selected");
   const locked = reached(status as CaseStatus, "gate2_approved");
-  const { svc, generator, secrets } = useApp();
+  const { svc, generator, secrets, settings } = useApp();
   const images = useMemo(() => new ImageService(svc), [svc]);
   const [doc, setDoc] = useState<ImagesDoc | null>(null);
   const [ready, setReady] = useState<{ ok: boolean; blockers: string[] }>({ ok: false, blockers: [] });
@@ -85,6 +87,9 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
   const [pasteTool, setPasteTool] = useState("Figma (PNG로 복사)");
   const [method, setMethod] = useState<ImageMethod>("prompt");
   const [refAssets, setRefAssets] = useState<string[]>([]);
+  const [genCount, setGenCount] = useState(2);
+  const [genUseRef, setGenUseRef] = useState<boolean | null>(null);
+  const [genNotes, setGenNotes] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
     let d = await images.getDoc(caseId);
@@ -136,6 +141,10 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
   const latestPrompt = doc.prompts[doc.prompts.length - 1];
   const productRoute = policy?.route === "product_cutout" || policy?.route === "product_regenerate";
   const visibleItems = doc.items.filter((i) => i.status !== "discarded");
+  const genReady = !!settings.imageGen.model || settings.llm.provider === "fake";
+  // 제품형(누끼·재생성)은 앱의 권장 순서대로 제품 사진을 참조로 넣는 것이 기본. 사람이 끌 수 있다
+  const genRef = productRoute && productAssets.length > 0 && (genUseRef ?? true);
+  const genRefIds = refAssets.length ? refAssets.filter((id) => productAssets.some((a) => a.id === id)) : productAssets.map((a) => a.id);
   const discarded = doc.items.length - visibleItems.length;
 
   return (
@@ -242,6 +251,63 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
               </div>
             )}
             {latestPrompt.issues.map((i, k) => <div key={k} className={i.severity === "error" ? "err" : "warn"}>⚠ {i.message}</div>)}
+            <div className="card stack" style={{ background: "var(--bg)" }}>
+              <b>앱에서 바로 생성 (Gemini 이미지 모델)</b>
+              {!genReady ? (
+                <div className="muted">설정 → <a href="#/settings">이미지 생성 (Gemini)</a>에서 Gemini API 키와 이미지 모델을 고르면, 이 프롬프트를 복사하지 않고 바로 이미지를 받을 수 있습니다.</div>
+              ) : (
+                <>
+                  <div className="row">
+                    <label className="row">장 수
+                      <select value={genCount} onChange={(e) => setGenCount(Number(e.target.value))}>
+                        {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </label>
+                    {productRoute && (
+                      productAssets.length === 0 ? <span className="warn">제품 사진을 자료에 올리면 참조로 함께 보낼 수 있습니다</span> : (
+                        <label className="row">
+                          <input type="checkbox" checked={genRef} onChange={(e) => setGenUseRef(e.target.checked)} />
+                          제품 사진을 참조로 함께 보내기 ({Math.min(genRefIds.length, 3)}장{genRefIds.length > 3 ? ", 앞의 3장만" : ""} · 아래 '이미지 가져오기'의 참조 사진 선택을 따름)
+                        </label>
+                      )
+                    )}
+                    <button
+                      className="primary"
+                      disabled={!!busy || latestPrompt.issues.some((i) => i.severity === "error") || (genRef && genRefIds.length === 0)}
+                      onClick={() => {
+                        if (needName("gen")) return;
+                        setGenNotes([]);
+                        run("gen", async () => {
+                          const gen = createImageGenerator(settings, secrets);
+                          const r = await images.generateImages(
+                            caseId,
+                            gen,
+                            {
+                              promptId: latestPrompt.id,
+                              count: genCount,
+                              method: genRef ? "product_reference" : "prompt",
+                              referenceAssetIds: genRef ? genRefIds : undefined,
+                              toolName: imageToolName,
+                              onProgress: (done, total) => setProgress(done < total ? `${done + 1}/${total}장 만드는 중…` : ""),
+                            },
+                            name,
+                          );
+                          setGenNotes(r.notes);
+                        });
+                      }}
+                    >
+                      {busy === "gen" ? progress || "만드는 중…" : `Gemini로 ${genCount}장 생성`}
+                    </button>
+                  </div>
+                  <AreaErr area="gen" />
+                  {genNotes.length > 0 && <div className="muted">모델 메모: {genNotes.join(" / ").slice(0, 300)}</div>}
+                  <div className="muted">
+                    모델: {settings.imageGen.model || "가짜 이미지 모델 (시험용)"} · 비율 {latestPrompt.aspect}{latestPrompt.aspect === "1.91:1" ? " → 16:9로 만들고 합성에서 맞춤" : ""}.
+                    받은 이미지는 바로 저장되고 아래 '이미지 후보'에 추가됩니다(도구·모델·프롬프트·날짜 기록). 글자·로고가 생기지 않았는지, 제품이 새로 그려지지 않았는지 사람이 확인합니다.
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

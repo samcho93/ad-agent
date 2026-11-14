@@ -169,7 +169,8 @@ export interface Asset {
   addedBy: string;
 }
 
-export type ImageSource = "figma" | "upload" | "cutout";
+/** gemini: 앱에서 Gemini 이미지 모델로 직접 생성 */
+export type ImageSource = "figma" | "upload" | "cutout" | "gemini";
 
 /** 이미지를 만든 방법 (기록용). 제품 사진을 참조로 넣어 배경을 만들면 각도·빛이 맞아 자연스럽다 */
 export type ImageMethod = "prompt" | "product_reference" | "photo";

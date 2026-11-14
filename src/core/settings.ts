@@ -29,6 +29,8 @@ export interface Settings {
   pricing: string;
   privacyRetention: string;
   imageModel: string;
+  /** 앱에서 직접 이미지 생성 (Gemini 이미지 모델). 키는 Gemini API 키를 같이 쓴다. 모델은 연결 확인 목록에서 고른다 */
+  imageGen: { model: string };
   defaultVariants: number;
   composeBackend: string;
 }
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pricing: defaults.pricing,
   privacyRetention: defaults.privacyRetention,
   imageModel: defaults.imageModel,
+  imageGen: { ...defaults.imageGen },
   defaultVariants: defaults.defaultVariants,
   composeBackend: defaults.composeBackend,
 };
@@ -70,6 +73,7 @@ export function mergeSettings(saved: Partial<Settings> | null | undefined): Sett
     llm: { ...DEFAULT_SETTINGS.llm, ...llmRest, models },
     revision: { ...DEFAULT_SETTINGS.revision, ...(saved.revision ?? {}) },
     qa: { ...DEFAULT_SETTINGS.qa, ...(saved.qa ?? {}) },
+    imageGen: { ...DEFAULT_SETTINGS.imageGen, ...(saved.imageGen ?? {}) },
     productRules: Array.isArray(saved.productRules) ? saved.productRules : [],
   };
 }
