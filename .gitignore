@@ -20,3 +20,6 @@ docs/source/
 # 받은 후기·검토 문서 (이름·실제 제품 사진이 있어 공개 저장소에 올리지 않음)
 docs/*.docx
 docs/~$*
+
+# Electron 실행파일 빌드 결과 (GitHub Release 에 올린다)
+release/

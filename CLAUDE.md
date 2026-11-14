@@ -20,6 +20,7 @@ AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 
 
 ## 구조 (확정)
 - 서버 없는 정적 웹 앱 (Vite + React + TypeScript). 배포: Cloudflare Pages https://ad-agent-4k9.pages.dev/ (`npm run deploy:cf`) 와 GitHub Pages https://samcho93.github.io/ad-agent/ (main 푸시). SamStudy 강좌 허브(irodmas.com)에는 Cloudflare 주소로 등록한다.
+- 데스크톱 실행파일: Electron(`electron/main.cjs`)이 같은 `dist/` 를 `app://ad-agent/` 로 띄운다. `npm run dist:win` → GitHub Release `v<버전>` (설치판·포터블) → SamStudy 허브 프로그램 다운로드에 등록.
 - 빌드는 상대 경로(`base: "./"`)다. 절대 경로(`/assets/...`)를 코드에 쓰지 않는다 (허브의 `irodmas.com/<강좌>/` 아래에서도 동작해야 함).
 - 케이스 데이터와 키는 사용자 PC·브라우저에만 저장한다 (IndexedDB 또는 고른 폴더, 키는 선택적으로 비밀번호 암호화).
 - LLM: 사용자 본인 키로 브라우저에서 직접 호출 (Anthropic / OpenAI / Gemini), 또는 이 PC의 Claude CLI 브리지(`bridge/bridge.mjs`, 127.0.0.1 전용). 개발·시험은 가짜 모델(`npm run dev:fake`).
@@ -92,6 +93,7 @@ AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 
 | 22 | 확인 | 배포 확인 / SamStudy에서도 최종 버전이 실행되는가? | Cloudflare 장애 중 재시도로 배포 |
 | 23 | 문서 | 사용했던 프롬프트를 정리하여 Claude.md 파일을 구성. 재빌드가 될 때마다 타이틀 옆에 버전 표시. | 이 절과 버전 표시 |
 | 24 | 수정 | 간단하게 버전만 표시. | 제목 옆은 버전만, 빌드 시각·커밋은 툴팁과 도움말 |
+| 25 | 배포 | 일렉트론으로 실행파일을 만들고, 깃허브에 release 해주고, SamStudy에 프로그램으로 등록해줘. | Electron 설치판·포터블, GitHub Release v0.7.0, 허브 프로그램 등록 |
 
 ### 처음부터 다시 만들 때 쓸 프롬프트 (정리본)
 위 대화에서 정해진 것을 한 번에 담은 요청이다. 새 저장소에서 `docs/`(architecture, decisions, mvp-plan, compose_spec 예시)와 스킬 `ad-brief`, `ad-image-router` 를 둔 뒤 Claude Code 에 단계별로 준다. 각 단계에서 계획을 먼저 받고 승인한다.
@@ -134,5 +136,6 @@ npm test
 npm run typecheck
 npm run build
 npm run deploy:cf  # Cloudflare Pages 배포
+npm run dist:win   # 데스크톱 실행파일 (release/, GitHub Release 에 올림)
 node bridge/bridge.mjs   # Claude CLI 브리지
 ```

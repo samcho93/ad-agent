@@ -1,6 +1,10 @@
 {
   "name": "ad-agent",
-  "version": "0.6.1",
+  "version": "0.7.0",
+  "productName": "AdAgent",
+  "description": "광고 시안(배너) 제작 에이전트",
+  "author": "samcho93",
+  "main": "electron/main.cjs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +16,9 @@
     "typecheck": "tsc --noEmit",
     "bridge": "node bridge/bridge.mjs",
     "deploy:cf": "vite build --mode cloudflare && npx wrangler pages deploy dist --project-name ad-agent --branch main",
-    "build:cf": "vite build --mode cloudflare"
+    "build:cf": "vite build --mode cloudflare",
+    "electron": "vite build && electron .",
+    "dist:win": "vite build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
@@ -31,10 +37,53 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
     "fake-indexeddb": "^6.2.8",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^6.4.6",
     "vitest": "^5.1.0"
+  },
+  "build": {
+    "appId": "com.samcho93.adagent",
+    "productName": "AdAgent",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "shortcutName": "광고 시안 에이전트"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    }
   }
 }

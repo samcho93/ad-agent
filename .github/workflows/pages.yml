@@ -25,6 +25,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1" # 웹 빌드에는 Electron 실행파일이 필요 없음
       - run: npm test
       - run: npm run build
         env:

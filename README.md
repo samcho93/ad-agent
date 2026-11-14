@@ -4,6 +4,7 @@
 AI가 초안(브리프, 아이디어, 이미지 프롬프트, 검수 의견)을 만들고, **사람이 고르고 확정합니다.** AI 결과를 그대로 내보내지 않습니다.
 
 - 사이트 (Cloudflare Pages): https://ad-agent-4k9.pages.dev/ · 같은 앱 GitHub Pages: https://samcho93.github.io/ad-agent/
+- 데스크톱 실행파일 (Windows): https://github.com/samcho93/ad-agent/releases/latest — `AdAgent-Setup-<버전>.exe`(설치) 또는 `AdAgent-Portable-<버전>.exe`(설치 없이 실행). 웹판과 같은 화면이며 데이터·키는 이 PC 안에만 저장됩니다.
 - 광고주용 질문지: https://ad-agent-4k9.pages.dev/#/intake?mode=client
 - 광고주용 시안 확인: https://ad-agent-4k9.pages.dev/#/proof
 - 이 도움말은 저장소의 `README.md` 와 앱의 **도움말** 메뉴에 같은 내용으로 들어 있습니다.
@@ -220,7 +221,7 @@ Claude Code가 설치·로그인된 PC에서 (Node 18 이상, 의존성 없음):
 node bridge/bridge.mjs
 ```
 - 화면에 나오는 주소와 **연결 코드**를 웹 앱 설정에 넣습니다. 코드는 `~/.ad-agent-bridge.json` 에 저장됩니다 (`--new-code` 로 새로 만들기).
-- 127.0.0.1 에서만 열리고, 허용된 웹 주소(Cloudflare Pages, GitHub Pages, irodmas.com, localhost)에서 온 요청만 받습니다. 다른 주소에서 쓰려면 `--origin https://...`.
+- 127.0.0.1 에서만 열리고, 허용된 웹 주소(Cloudflare Pages, GitHub Pages, irodmas.com, localhost, 데스크톱 실행파일 `app://ad-agent`)에서 온 요청만 받습니다. 데스크톱 실행파일에서 쓰려면 브리지 0.2.2 이상이 필요합니다. 다른 주소에서 쓰려면 `--origin https://...`.
 - 하는 일은 `claude -p --json-schema` 구조화 생성 하나뿐입니다(도구 없음). 검수 때는 시안 이미지도 함께 넘깁니다(0.2.0부터). 프롬프트와 이미지는 기록하지 않습니다.
 - Chrome에서 처음 연결할 때 "로컬 네트워크 접근" 허용을 물을 수 있습니다.
 
@@ -240,6 +241,9 @@ npm run build      # dist/ (배포본에는 CSP가 들어간다)
 배포는 두 곳입니다. 빌드는 상대 경로(`base: "./"`)라 어느 주소 아래에 올려도 동작합니다 (SamStudy 허브 `irodmas.com/<강좌>/` 포함).
 - **Cloudflare Pages** (`wrangler.toml`, 프로젝트 `ad-agent`): `npm run deploy:cf` (= `vite build --mode cloudflare` 후 `wrangler pages deploy dist`). Pages 는 파일 하나가 25MiB 까지라, 누끼용 ONNX 런타임 wasm(25.6MiB)만 jsDelivr 의 같은 버전(바이트 동일)에서 받습니다.
 - **GitHub Pages**: `main` 에 푸시하면 GitHub Actions(`.github/workflows/pages.yml`)가 테스트·빌드 후 올립니다.
+- **데스크톱 실행파일 (Electron)**: `npm run dist:win` → `release/` 에 `AdAgent-Setup-<버전>.exe`(NSIS 설치판), `AdAgent-Portable-<버전>.exe`. 만든 파일은 GitHub Release(태그 `v<버전>`)에 올리고, SamStudy 허브에는 프로그램으로 등록합니다. `npm run electron` 은 빌드 후 바로 실행합니다.
+  - `electron/main.cjs` 가 웹판과 같은 `dist/` 를 `app://ad-agent/` 주소로 띄웁니다 (IndexedDB·폴더 저장소·LLM API 호출이 웹 주소처럼 동작). 바깥 링크는 기본 브라우저로 엽니다.
+  - 코드 서명은 하지 않아 처음 실행할 때 Windows SmartScreen 경고가 나올 수 있습니다 ("추가 정보 → 실행").
 
 | 경로 | 내용 |
 |---|---|
