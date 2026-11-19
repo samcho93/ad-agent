@@ -39,10 +39,14 @@ export async function generateImagePrompt(svc: CaseService, images: ImageService
   ].join("\n");
 
   const toneRow = effectiveValue(brief, "tone");
+  const intake = await svc.getIntake(caseId);
+  const place = intake.answers["1"].place?.trim() ?? "";
+  const menuCloseup = !brief.hasProduct && (policy.route === "product_cutout" || policy.route === "product_regenerate");
   const user = [
     `이미지 경로: ${ROUTE_LABEL[policy.route]}`,
     policy.medical ? "의료(병원) 업종: 시술 장면, 전후 비교, 효과 보장으로 보이는 장면 금지" : "",
-    `제품: ${brief.hasProduct ? "제품형" : "무형"}`,
+    `제품: ${brief.hasProduct ? "제품형" : menuCloseup ? "무형(가게)이지만 대표 메뉴의 실제 사진을 누끼로 얹는 메뉴 클로즈업. 메뉴는 그리지 않고 메뉴가 놓일 자리와 배경만" : "무형"}`,
+    `가게가 있는 동네·지역·모습: ${place || "(답 없음) 한국 광고주이므로 한국의 거리·건물 모습을 기본으로"}`,
     "<브리프>",
     `- 톤·비주얼 방향: ${toneRow.replace(/<br>/g, " ")}`,
     `- 핵심 메시지: ${effectiveValue(brief, "keyMessage")}`,
@@ -57,7 +61,7 @@ export async function generateImagePrompt(svc: CaseService, images: ImageService
     `- 분위기: ${idea.visual.mood}`,
     "</아이디어>",
     "배너 규격은 1080x1080(1:1)과 1200x628(1.91:1)이다. 주 이미지는 1:1을 권장한다.",
-    ruleForPrompt(matchRule(svc.currentSettings.productRules, await svc.getIntake(caseId))),
+    ruleForPrompt(matchRule(svc.currentSettings.productRules, intake)),
   ]
     .filter(Boolean)
     .join("\n");

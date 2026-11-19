@@ -25,12 +25,14 @@ const mediaAnswer = z.preprocess(
     const o = (v ?? {}) as Record<string, unknown>;
     if (Array.isArray(o.channels) && o.primary === undefined) {
       const ch = o.channels.filter((c): c is string => typeof c === "string");
-      return { primary: ch[0] ?? null, other: ch.slice(1).length ? `함께 고른 매체: ${ch.slice(1).join(", ")}` : "", size: "", maxKB: null, unknown: o.unknown ?? false };
+      return { primary: ch[0] ?? null, also: ch.slice(1), other: "", size: "", maxKB: null, unknown: o.unknown ?? false };
     }
     return o;
   },
   z.object({
     primary: z.enum(CHANNEL_OPTIONS).nullable().default(null),
+    /** 함께 집행할 매체 (선택, 여러 개). 대표 매체는 빼고 저장한다 */
+    also: z.array(z.enum(CHANNEL_OPTIONS)).default([]),
     other: z.string().default(""),
     size: z.string().default("").refine((t) => !t.trim() || parseSizeText(t) !== null, { message: "사이즈는 가로x세로 픽셀로 적어 주세요 (예: 1080x1350)" }),
     maxKB: z.number().positive().max(100000).nullable().default(null),
@@ -61,9 +63,20 @@ export const IntakeSchema = z.object({
     phone: z.string().trim().min(1),
   }),
   answers: z.object({
-    "1": z.object({ text: z.string().trim().min(1), unknown: z.literal(false).default(false) }),
+    "1": z.object({
+      text: z.string().trim().min(1),
+      /** 가게가 있는 동네·지역과 가게 모습 (선택). 이미지 프롬프트의 장소 묘사에 쓴다 */
+      place: z.string().default(""),
+      unknown: z.literal(false).default(false),
+    }),
     "2": textAnswer,
-    "3": z.object({ choice: z.enum(OBJECTIVES).nullable().default(null), unknown: unknownFlag }),
+    "3": z.object({
+      /** 1순위 (필수. 예전 답변 파일의 "모르겠음"은 그대로 읽는다) */
+      choice: z.enum(OBJECTIVES).nullable().default(null),
+      /** 2순위 (선택) */
+      second: z.enum(OBJECTIVES).nullable().default(null),
+      unknown: unknownFlag,
+    }),
     "4": textAnswer,
     "5": z.object({
       competitors: z
@@ -87,9 +100,9 @@ export type QuestionNo = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 /** 화면에 쓰는 질문 문구. 쉬운 말로 쓴다. */
 export const QUESTIONS: { no: QuestionNo; title: string; help?: string; unknownAllowed: boolean; optional?: boolean }[] = [
   { no: 0, title: "가게(회사) 이름과 담당자, 연락처를 알려 주세요", help: "담당자 이름과 연락처는 연락용으로만 쓰고 AI에게 보내지 않아요.", unknownAllowed: false },
-  { no: 1, title: "무엇을 파시나요?", help: "예) 동네에서 직접 굽는 수제 쿠키", unknownAllowed: false },
+  { no: 1, title: "무엇을 팔거나 알리고 싶으세요?", help: "예) 동네에서 직접 굽는 수제 쿠키 / 새로 연 동네 카페 자체를 알리기 / 필라테스 학원 회원 모집. 아래에 가게가 있는 동네와 가게 모습도 적어 주시면 광고 그림이 우리 동네 느낌으로 나와요.", unknownAllowed: false },
   { no: 2, title: "누구에게 팔고 싶으세요?", help: "예) 아이 간식을 고르는 30대 부모", unknownAllowed: true },
-  { no: 3, title: "이번 광고로 가장 얻고 싶은 것은 무엇인가요?", help: "하나만 골라 주세요.", unknownAllowed: true },
+  { no: 3, title: "이번 광고로 가장 얻고 싶은 것은 무엇인가요?", help: "1순위 하나는 꼭 골라 주세요. 2순위가 있으면 하나 더 고를 수 있어요.", unknownAllowed: false },
   { no: 4, title: "지금 가장 큰 고민은 무엇인가요?", help: "예) 가게를 아는 사람이 적어요", unknownAllowed: true },
   { no: 5, title: "비슷한 경쟁 업체가 있나요? (최대 3곳)", help: "인스타그램처럼 로그인해야 보이는 곳은 화면 캡처를 따로 보내 주시면 좋아요.", unknownAllowed: true },
   { no: 6, title: "경쟁 업체보다 우리가 더 나은 점 하나는?", help: "후기, 숫자, 수상 이력이 있으면 함께 적어 주세요. 없으면 비워 두셔도 돼요.", unknownAllowed: true },
@@ -97,7 +110,7 @@ export const QUESTIONS: { no: QuestionNo; title: string; help?: string; unknownA
   { no: 8, title: "마음에 드는 광고와 싫은 광고가 있나요?", help: "선택 질문이에요. 건너뛰셔도 돼요.", unknownAllowed: true, optional: true },
   { no: 9, title: "광고에 보여 줄 제품이 있나요?", help: "쿠키, 화장품처럼 손에 잡히는 물건이면 '있음', 상담·서비스·가게 자체를 알리면 '없음'이에요.", unknownAllowed: false },
   { no: 10, title: "광고에 쓸 사진과 로고가 있나요?", help: "있는 것을 모두 골라 주세요. 파일은 다음 단계에서 받아요.", unknownAllowed: true },
-  { no: 11, title: "가장 먼저 광고할 곳은 어디인가요?", help: "대표 매체 하나만 골라 주세요. 다른 매체와 사이즈는 시안을 고른 뒤 추가할 수 있어요.", unknownAllowed: true },
+  { no: 11, title: "가장 먼저 광고할 곳은 어디인가요?", help: "대표 매체 하나를 고르고, 함께 광고할 곳이 있으면 아래에서 더 골라 주세요. 다른 사이즈는 시안을 고른 뒤 추가할 수 있어요.", unknownAllowed: true },
 ];
 
 /** 질문 번호별 "모르겠음" 여부 */
@@ -120,9 +133,10 @@ export function intakeForModel(intake: Intake): string {
   const u = (flag: boolean, v: string) => (flag ? UNKNOWN_LABEL : v.trim() || "(빈칸)");
   const lines = [
     `0번 상호: ${intake.contact.company}`,
-    `1번 무엇을 파나: ${a["1"].text}`,
+    `1번 무엇을 팔거나 알리나: ${a["1"].text}`,
+    `1번 가게 동네·지역·모습: ${a["1"].place.trim() || "(빈칸)"}`,
     `2번 타깃: ${u(a["2"].unknown, a["2"].text)}`,
-    `3번 광고 목적: ${u(a["3"].unknown, a["3"].choice ?? "")}`,
+    `3번 광고 목적: ${u(a["3"].unknown, objectiveText(a["3"]))}`,
     `4번 가장 큰 고민: ${u(a["4"].unknown, a["4"].text)}`,
     `5번 경쟁 업체: ${u(
       a["5"].unknown,
@@ -146,8 +160,9 @@ export function intakeCorpus(intake: Intake): string {
   return [
     intake.contact.company,
     a["1"].text,
+    a["1"].place,
     a["2"].unknown ? "" : a["2"].text,
-    a["3"].unknown ? "" : a["3"].choice ?? "",
+    a["3"].unknown ? "" : objectiveText(a["3"]),
     a["4"].unknown ? "" : a["4"].text,
     a["5"].unknown ? "" : a["5"].competitors.map((c) => `${c.name} ${c.url}`).join(" "),
     a["6"].unknown ? "" : a["6"].text,
@@ -168,11 +183,49 @@ export function bannedPhrases(intake: Intake): string[] {
     .filter((s) => s.length >= 2 && !/^(없음|없어요|없습니다)$/.test(s));
 }
 
+/** 3번 답을 한 줄로: "1순위 매출, 2순위 회원가입" */
+export function objectiveText(o: Intake["answers"]["3"]): string {
+  if (!o.choice) return "";
+  return o.second && o.second !== o.choice ? `1순위 ${o.choice}, 2순위 ${o.second}` : o.choice;
+}
+
 /** 11번 답을 한 줄로 */
 export function mediaText(m: Intake["answers"]["11"]): string {
   const main = m.primary === "기타" ? m.other.trim() || "기타" : m.primary ?? "";
   const extra = m.primary !== "기타" && m.other.trim() ? ` (${m.other.trim()})` : "";
-  return [main + extra, m.size.trim() ? `사이즈 ${m.size.trim()}` : "", m.maxKB ? `용량 한도 ${m.maxKB}KB` : ""].filter(Boolean).join(", ");
+  const also = m.also.filter((c) => c !== m.primary);
+  return [
+    main + extra,
+    also.length ? `함께 집행: ${also.map((c) => (c === "기타" && m.primary !== "기타" && m.other.trim() ? m.other.trim() : c)).join(", ")}` : "",
+    m.size.trim() ? `사이즈 ${m.size.trim()}` : "",
+    m.maxKB ? `용량 한도 ${m.maxKB}KB` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** 판매·메뉴를 말하는 낱말 (9번 "보여 줄 제품 없음"과 어긋나는지 볼 때) */
+const SELLING_WORDS = /(신메뉴|신제품|대표 메뉴|메뉴|제품|상품)/;
+
+/**
+ * 서로 어긋나 보이는 답 (막지 않고 확인을 부탁한다).
+ * 예) 9번 "보여 줄 제품 없음"인데 다른 답에 "신메뉴" → 대표 메뉴를 보여 주려면 실제 사진이 필요하다.
+ */
+export function intakeMismatches(intake: Intake): string[] {
+  const a = intake.answers;
+  const out: string[] = [];
+  const text = [a["1"].text, a["2"].text, a["4"].text, a["6"].text, a["7"].must].join(" ");
+  const hit = SELLING_WORDS.exec(text);
+  if (!a["9"].hasProduct && hit) {
+    out.push(
+      `9번에서 광고에 보여 줄 제품을 '없음'으로 골랐는데, 다른 답에 '${hit[1]}'이(가) 있어요. 메뉴·제품을 광고에 보여 주려면 실제 사진이 필요해요 (9번을 '있음'으로 바꾸거나, 이미지 단계에서 '대표 메뉴 사진'을 받아 메뉴 클로즈업으로 진행). AI가 메뉴를 새로 그리지는 않아요.`,
+    );
+  }
+  if (a["9"].hasProduct && !a["10"].unknown && !a["10"].assets.includes("제품 사진")) {
+    out.push("9번에서 보여 줄 제품이 '있음'인데 10번에 제품 사진이 없어요. 제품 사진이 있어야 광고에 제품을 넣을 수 있어요 (AI가 제품을 새로 그리지 않아요).");
+  }
+  if (a["3"].second && a["3"].second === a["3"].choice) out.push("3번 1순위와 2순위가 같아요.");
+  return out;
 }
 
 /**

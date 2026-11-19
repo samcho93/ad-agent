@@ -62,7 +62,7 @@ describe("규칙 강제", () => {
 
   it("1부 3번 답이 있으면 모델이 목적을 바꾸지 못한다", () => {
     const i2 = structuredClone(intake);
-    i2.answers["3"] = { choice: "매출", unknown: false };
+    i2.answers["3"] = { choice: "매출", second: null, unknown: false };
     const b = buildBrief(i2, goodBrief(), settings, "m");
     expect(b.objectiveCategory).toBe("매출");
     // 목적은 답에서 왔으므로 추정이 아니다. KPI만 추정이면 KPI에만 표시한다

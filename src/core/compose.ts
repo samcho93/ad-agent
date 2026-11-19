@@ -42,8 +42,14 @@ export interface SharedLayout {
   copySpace: CopySpace;
   textColor: "#ffffff" | "#1f1d1a";
   overlay: number; // 그라데이션 세기 0~1 (문구 쪽에 깔림)
+  /** 글자 뒤 띠 (0 = 없음, 0.3~0.9 = 진하기). 글자 색이 흰색이면 어두운 띠, 검정이면 밝은 띠 */
+  band?: number;
+  /** 배경 그림 확대(1~2)와 위치. dx 양수 = 그림을 왼쪽으로, dy 양수 = 그림을 위로 (글자와 그림 속 메뉴·사람이 겹칠 때) */
+  scene?: { zoom: number; dx: number; dy: number };
   sizes: SizeKey[];
 }
+
+export const sceneOf = (sh: SharedLayout) => sh.scene ?? { zoom: 1, dx: 0, dy: 0 };
 
 /** A/B 마다 다른 것: 메시지, 버튼 문구, 버튼 색 */
 export interface VariantCopy {
@@ -87,6 +93,8 @@ export function toComposeSpec(caseId: string, doc: ComposeDoc, v: Variant) {
     logo: doc.shared.logo,
     copySpace: doc.shared.copySpace,
     overlay: { side: doc.shared.copySpace, strength: doc.shared.overlay },
+    band: doc.shared.band ?? 0,
+    scene: sceneOf(doc.shared),
     sizes: doc.shared.sizes,
     export: ["png"],
     font: "Pretendard (SIL OFL 1.1)",
@@ -103,6 +111,10 @@ export function defaultComposeDoc(idea: Idea, brief: BriefDoc, images: ImagesDoc
   const cutout = picked.find((i) => i.role === "cutout");
   const logo = images.assets.find((a) => a.kind === "logo");
   const cta = (brief.decisions.cta?.value ?? "").trim();
+  const ctaA = cta || idea.cta;
+  // B 는 A 와 다른 버튼 문구로 (아이디어의 CTA, 브리프 CTA 후보 순). 다른 것이 없으면 같게 둔다
+  const ctaCandidates = brief.rows.find((r) => r.id === "cta")?.candidates ?? [];
+  const ctaB = [idea.cta, ...ctaCandidates].map((s) => (s ?? "").trim()).find((s) => s && s !== ctaA) ?? ctaA;
   const copySpace = (["위", "아래", "왼쪽", "오른쪽"] as const).find((s) => s === idea.visual.copySpace) ?? "위";
   return {
     version: 1,
@@ -114,11 +126,13 @@ export function defaultComposeDoc(idea: Idea, brief: BriefDoc, images: ImagesDoc
       copySpace,
       textColor: "#ffffff",
       overlay: 0.55,
+      band: 0,
+      scene: { zoom: 1, dx: 0, dy: 0 },
       sizes: [...SIZES],
     },
     variants: {
-      A: { headline: idea.headlines[0] ?? "", sub: idea.subCopy, cta: cta || idea.cta, buttonBg: rule?.accent ?? DEFAULT_BUTTON.A, buttonFg: buttonTextFor(rule?.accent ?? DEFAULT_BUTTON.A) },
-      B: { headline: idea.headlines[1] ?? idea.headlines[0] ?? "", sub: idea.subCopy, cta: idea.cta || cta, buttonBg: DEFAULT_BUTTON.B, buttonFg: "#ffffff" },
+      A: { headline: idea.headlines[0] ?? "", sub: idea.subCopy, cta: ctaA, buttonBg: rule?.accent ?? DEFAULT_BUTTON.A, buttonFg: buttonTextFor(rule?.accent ?? DEFAULT_BUTTON.A) },
+      B: { headline: idea.headlines[1] ?? idea.headlines[0] ?? "", sub: idea.subCopy, cta: ctaB, buttonBg: DEFAULT_BUTTON.B, buttonFg: "#ffffff" },
     },
     colorSource: rule?.accent
       ? { rule: rule.name, reason: `시안 A 버튼 색은 제품 종류 규칙 "${rule.name}"의 강조색${rule.colorReason ? ` (${rule.colorReason})` : ""}. 시안 B는 비교용 기본 색` }

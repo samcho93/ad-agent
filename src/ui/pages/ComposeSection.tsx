@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ComposeService, renderFile } from "@/core/composeService";
-import { SIZES, SIZE_LABEL, sizeLabel as sizeLabelOf, type ComposeDoc, type CopySpace, type Corner, type SizeKey, type Variant, type VariantCopy } from "@/core/compose";
+import { SIZES, SIZE_LABEL, sceneOf, sizeLabel as sizeLabelOf, type ComposeDoc, type CopySpace, type Corner, type SizeKey, type Variant, type VariantCopy } from "@/core/compose";
 import type { Issue } from "@/core/validate";
 import { loadFonts } from "@/render/fonts";
 import { canvasToPng, loadComposeSources, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
@@ -202,6 +202,17 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
             </select>
           </label>
           <label className="row">그라데이션 <input type="range" min={0} max={0.9} step={0.05} value={doc.shared.overlay} onChange={(e) => edit((d) => { d.shared.overlay = Number(e.target.value); })} /></label>
+          <label className="row" title="글자 덩어리 뒤에 어두운(글자가 검정이면 밝은) 띠를 깝니다. 0이면 없음">
+            글자 뒤 띠 <input type="range" min={0} max={0.9} step={0.05} value={doc.shared.band ?? 0} onChange={(e) => edit((d) => { d.shared.band = Number(e.target.value); })} />
+            <span className="muted">{(doc.shared.band ?? 0) > 0 ? (doc.shared.band ?? 0).toFixed(2) : "없음"}</span>
+          </label>
+        </div>
+        <div className="row">
+          <span>배경 그림</span>
+          <label className="row">확대 <input type="range" min={1} max={2} step={0.05} value={sceneOf(doc.shared).zoom} onChange={(e) => edit((d) => { d.shared.scene = { ...sceneOf(d.shared), zoom: Number(e.target.value) }; })} /></label>
+          <label className="row" title="양수 = 그림을 위로 올림">위아래 <input type="range" min={-0.5} max={0.5} step={0.02} value={sceneOf(doc.shared).dy} onChange={(e) => edit((d) => { d.shared.scene = { ...sceneOf(d.shared), dy: Number(e.target.value) }; })} /></label>
+          <label className="row" title="양수 = 그림을 왼쪽으로">좌우 <input type="range" min={-0.5} max={0.5} step={0.02} value={sceneOf(doc.shared).dx} onChange={(e) => edit((d) => { d.shared.scene = { ...sceneOf(d.shared), dx: Number(e.target.value) }; })} /></label>
+          <span className="muted small">글자가 그림 속 메뉴·사람과 겹치면: 확대한 뒤 위아래로 그림을 옮기고, 글자 뒤 띠를 켜세요. (같은 비율의 그림은 확대해야 움직입니다)</span>
         </div>
         {doc.shared.product && (
           <div className="row">

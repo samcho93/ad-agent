@@ -132,7 +132,9 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
   if (!doc) return <p className="muted">이미지 단계를 불러오는 중…</p>;
   const policy = doc.policy;
   const productAssets = doc.assets.filter((a) => a.kind === "product");
-  const isProductCase = !policy || policy.route.startsWith("product");
+  /** 브리프의 제품 유무 (무형 가게라도 메뉴 클로즈업이면 경로는 product_*) */
+  const isProductCase = !policy || (policy.hasProduct ?? policy.route.startsWith("product"));
+  const usesPhoto = !policy || policy.route.startsWith("product");
   /** 가져오는 이미지의 만든 방법 기록 */
   const methodInfo = () => ({
     method,
@@ -200,6 +202,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
             current={policy.route}
             options={PHOTO_ROUTES[isProductCase ? "product" : "intangible"]}
             hasProductPhoto={productAssets.length > 0}
+            menu={!isProductCase}
             busy={!!busy}
             onChange={(route, note) => { if (!needName("top")) run("route", () => images.setRoute(caseId, route, name, note)); }}
           />
@@ -325,7 +328,7 @@ export function ImagesSection({ caseId, name, status, onName, onChanged }: { cas
         <div className="row">
           <label className="row">만든 방법 (기록용)
             <select value={method} onChange={(e) => setMethod(e.target.value as ImageMethod)}>
-              {(Object.keys(IMAGE_METHOD_LABEL) as ImageMethod[]).filter((m) => m !== "product_reference" || isProductCase).map((m) => <option key={m} value={m}>{IMAGE_METHOD_LABEL[m]}</option>)}
+              {(Object.keys(IMAGE_METHOD_LABEL) as ImageMethod[]).filter((m) => m !== "product_reference" || usesPhoto).map((m) => <option key={m} value={m}>{IMAGE_METHOD_LABEL[m]}</option>)}
             </select>
           </label>
           {method === "product_reference" && (
@@ -517,8 +520,8 @@ function ImageCard({ item, doc, url, originalUrl, busy, onPatch }: {
 }
 
 /** 제품 사진 상태(이미지 경로) 바꾸기. 예: 광고주에게 사진 요청 중 → 사진 받음 → 누끼 */
-function RouteSwitch({ current, options, hasProductPhoto, busy, onChange }: {
-  current: ImageRoute; options: { route: ImageRoute; label: string }[]; hasProductPhoto: boolean; busy: boolean; onChange: (route: ImageRoute, note: string) => void;
+function RouteSwitch({ current, options, hasProductPhoto, menu, busy, onChange }: {
+  current: ImageRoute; options: { route: ImageRoute; label: string }[]; hasProductPhoto: boolean; menu: boolean; busy: boolean; onChange: (route: ImageRoute, note: string) => void;
 }) {
   const [next, setNext] = useState<ImageRoute>(current);
   useEffect(() => setNext(current), [current]);
@@ -527,12 +530,12 @@ function RouteSwitch({ current, options, hasProductPhoto, busy, onChange }: {
     <div className="stack" style={{ gap: 6 }}>
       {waitingButHasPhoto && (
         <div className="row">
-          <span className="okc"><b>제품 사진을 받았습니다.</b></span>
-          <button className="primary small" disabled={busy} onClick={() => onChange("product_cutout", "광고주에게 받은 제품 사진으로 진행")}>사진 받음 → 누끼 경로로</button>
+          <span className="okc"><b>{menu ? "대표 메뉴" : "제품"} 사진을 받았습니다.</b></span>
+          <button className="primary small" disabled={busy} onClick={() => onChange("product_cutout", `광고주에게 받은 ${menu ? "대표 메뉴" : "제품"} 사진으로 진행`)}>사진 받음 → 누끼 경로로</button>
         </div>
       )}
       <div className="row">
-        <label className="row">{current.startsWith("product") ? "제품 사진 상태" : "이미지 경로"}
+        <label className="row">{menu ? "이미지 방향 (가게 분위기 / 메뉴 클로즈업)" : "제품 사진 상태"}
           <select value={next} onChange={(e) => setNext(e.target.value as ImageRoute)}>
             {options.map((o) => <option key={o.route} value={o.route}>{o.label}</option>)}
           </select>

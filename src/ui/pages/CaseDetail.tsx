@@ -209,6 +209,9 @@ export default function CasePage({ id }: { id: string }) {
 
           {brief && (
             <>
+              {brief.issues.filter((i) => i.where === "intake").map((i, k) => (
+                <p key={k} className="card warn small" style={{ marginTop: 12 }}>⚠ 질문지 답 확인: {i.message}</p>
+              ))}
               <div className="card table-scroll" style={{ marginTop: 12 }}>
                 <table className="brief">
                   <thead><tr><th style={{ width: 90 }}>영역</th><th style={{ width: 130 }}>항목</th><th>내용</th><th style={{ width: 190 }}>태그</th></tr></thead>

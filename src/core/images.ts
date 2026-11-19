@@ -26,6 +26,8 @@ export const ROUTE_LABEL: Record<ImageRoute, string> = {
 
 export interface ImagePolicy {
   route: ImageRoute;
+  /** 브리프의 제품 유무 (무형이어도 메뉴 클로즈업이면 route 는 product_*) */
+  hasProduct?: boolean;
   reason: string;
   /** 병원 등 의료: 시술·전후 비교로 보이는 이미지 금지, 내부는 실제 사진 권장 */
   medical: boolean;
@@ -47,6 +49,8 @@ export function routeFromDecision(text: string, hasProduct: boolean): ImageRoute
     if (/재생성/.test(text)) return "product_regenerate";
     return "product_cutout";
   }
+  // 무형이지만 대표 메뉴 클로즈업: 실제 메뉴 사진을 누끼로 쓴다 (사진이 오기 전에는 이미지 단계에서 '사진 요청 중'으로 바꿈)
+  if (/메뉴 클로즈업/.test(text)) return "product_cutout";
   return /실제 (매장|공간)|실제 사진|매장·공간 사진/.test(text) ? "intangible_photo" : "intangible_ai";
 }
 
@@ -66,8 +70,11 @@ export const PHOTO_ROUTES: Record<"product" | "intangible", { route: ImageRoute;
     { route: "product_need_photo", label: "광고주에게 제품 사진 요청 중" },
   ],
   intangible: [
-    { route: "intangible_ai", label: "공간·사람·상황 이미지 생성" },
-    { route: "intangible_photo", label: "실제 매장·공간 사진 사용" },
+    { route: "intangible_ai", label: "가게 분위기: 공간·사람·상황 이미지 생성" },
+    { route: "intangible_photo", label: "가게 분위기: 실제 매장·공간 사진 사용" },
+    // 대표 메뉴를 보이고 싶을 때. 실제 메뉴 사진이 있어야 한다 (AI로 메뉴를 새로 그리지 않음, 절대 규칙 4)
+    { route: "product_cutout", label: "메뉴 클로즈업: 대표 메뉴 실제 사진 있음 → 누끼, 배경만 생성" },
+    { route: "product_need_photo", label: "메뉴 클로즈업: 광고주에게 대표 메뉴 사진 요청 중" },
   ],
 };
 
@@ -86,12 +93,12 @@ export function buildPolicy(intake: Intake, brief: BriefDoc, assets: Asset[], ov
     blockers.push(
       productPhotos.length
         ? "제품 사진을 받았습니다. 위 '제품 사진 상태'에서 누끼(또는 재생성) 경로로 바꾸면 이어서 진행됩니다"
-        : "광고주에게 제품 사진을 요청 중입니다. 사진을 받으면 '자료'에 올리고 '제품 사진 상태'를 바꾸세요 (AI로 제품을 새로 그리지 않습니다)",
+        : `광고주에게 ${hasProduct ? "제품" : "대표 메뉴"} 사진을 요청 중입니다. 사진을 받으면 '자료'에 올리고 '제품 사진 상태'를 바꾸세요 (AI로 ${hasProduct ? "제품" : "메뉴"}을 새로 그리지 않습니다)`,
     );
-    clientRequests.push("제품 사진 (정면, 비스듬한 각도, 가능하면 밝은 단색 배경)");
+    clientRequests.push(`${hasProduct ? "제품" : "대표 메뉴"} 사진 (정면, 비스듬한 각도, 가능하면 밝은 단색 배경)`);
   }
   if ((route === "product_cutout" || route === "product_regenerate") && productPhotos.length === 0) {
-    blockers.push("제품 사진 파일을 올려야 합니다 (자료 > 제품 사진)");
+    blockers.push(`${hasProduct ? "제품" : "대표 메뉴"} 사진 파일을 올려야 합니다 (자료 > 제품·메뉴 사진)`);
   }
   if (route === "intangible_photo" && shopPhotos.length === 0) {
     blockers.push("실제 매장·공간 사진 파일을 올려야 합니다 (자료 > 매장·공간 사진)");
@@ -114,6 +121,7 @@ export function buildPolicy(intake: Intake, brief: BriefDoc, assets: Asset[], ov
 
   return {
     route,
+    hasProduct,
     reason: override
       ? `이미지 단계에서 바꿈 (${override.by}, ${override.at.slice(0, 10)}): ${ROUTE_LABEL[override.route]}${override.note ? `. ${override.note}` : ""}${decided ? ` / 브리프 확정값: "${decided}"` : ""}`
       : decided
@@ -157,7 +165,7 @@ export function renderPolicyMarkdown(p: ImagePolicy, company: string): string {
 /* ------------------------------------------------------------------ */
 
 export type AssetKind = "product" | "shop" | "logo" | "other";
-export const ASSET_KIND_LABEL: Record<AssetKind, string> = { product: "제품 사진", shop: "매장·공간 사진", logo: "로고", other: "기타" };
+export const ASSET_KIND_LABEL: Record<AssetKind, string> = { product: "제품·메뉴 사진", shop: "매장·공간 사진", logo: "로고", other: "기타" };
 
 export interface Asset {
   id: string;

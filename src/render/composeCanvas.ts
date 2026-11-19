@@ -1,4 +1,4 @@
-import { type Box, type ComposeDoc, type Fit, type Placed, type SizeKey, type Variant, fitText, layoutFor, overlapIssues, sizeShape } from "@/core/compose";
+import { type Box, type ComposeDoc, type Fit, type Placed, type SizeKey, type Variant, fitText, layoutFor, overlapIssues, sceneOf, sizeShape } from "@/core/compose";
 import { FONT_FAMILY, WEIGHT } from "./fonts";
 
 /**
@@ -21,11 +21,14 @@ export interface RenderCheck {
 
 const font = (weight: number, size: number) => `${weight} ${size}px "${FONT_FAMILY}", sans-serif`;
 
-function drawCover(ctx: CanvasRenderingContext2D, img: Sources["scene"], W: number, H: number) {
-  const s = Math.max(W / img.width, H / img.height);
+/** 배경을 꽉 채운다. zoom(1~2)으로 확대하고, dx·dy(-0.5~0.5)로 남는 부분 안에서 옮긴다 (양수 = 그림을 왼쪽·위로) */
+function drawCover(ctx: CanvasRenderingContext2D, img: Sources["scene"], W: number, H: number, zoom = 1, dx = 0, dy = 0) {
+  const s = Math.max(W / img.width, H / img.height) * Math.max(1, Math.min(2, zoom));
   const w = img.width * s;
   const h = img.height * s;
-  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  const cx = Math.max(-0.5, Math.min(0.5, dx));
+  const cy = Math.max(-0.5, Math.min(0.5, dy));
+  ctx.drawImage(img, -(w - W) * (0.5 + cx), -(h - H) * (0.5 + cy), w, h);
 }
 
 /** 제품을 그리고, 실제로 보이는 부분(투명하지 않은 픽셀)의 사각형을 돌려준다 */
@@ -110,9 +113,11 @@ export function renderBanner(doc: ComposeDoc, variant: Variant, size: SizeKey, s
   const checks: RenderCheck[] = [];
   const note = (severity: RenderCheck["severity"], message: string) => checks.push({ variant, size, severity, message });
 
-  drawCover(ctx, src.scene, L.W, L.H);
+  const sc = sceneOf(doc.shared);
+  drawCover(ctx, src.scene, L.W, L.H, sc.zoom, sc.dx, sc.dy);
   overlay(ctx, L.W, L.H, L.overlaySide, doc.shared.overlay, doc.shared.textColor === "#ffffff");
-  const productBox = src.product && doc.shared.product ? drawContain(ctx, src.product, L.product, doc.shared.product.scale, doc.shared.product.dx, doc.shared.product.dy) : null;
+  // 제품 누끼는 글자 뒤 띠 위에 그리도록 글자 위치를 정한 뒤에 그린다
+  let productBox: Box | null = null;
 
   const measure = (weight: number) => (t: string, s: number) => {
     ctx.font = font(weight, s);
@@ -153,6 +158,19 @@ export function renderBanner(doc: ComposeDoc, variant: Variant, size: SizeKey, s
   // 글자 덩어리 전체 높이를 구해 영역 안에서 세로 정렬 (위·왼쪽은 위부터, 아래는 아래부터)
   const blockH = leadH + head.lines.length * head.size * 1.22 + (sub ? head.size * 0.4 + sub.lines.length * sub.size * 1.35 : 0) + (L.buttonInline ? 0 : L.cta.size + ctaH);
   let y = L.buttonInline ? L.text.y + (L.text.h - head.lines.length * head.size * 1.22) / 2 : doc.shared.copySpace === "아래" && square ? L.text.y + L.text.h - blockH : L.text.y;
+
+  // 글자 뒤 띠: 글자 덩어리가 있는 쪽 가장자리까지 덮는다 (띠 배너는 너무 작아 쓰지 않음)
+  const band = Math.max(0, Math.min(0.9, doc.shared.band ?? 0));
+  if (band > 0 && !L.buttonInline) {
+    const pad = Math.round(Math.min(L.W, L.H) * 0.04);
+    ctx.fillStyle = doc.shared.textColor === "#ffffff" ? `rgba(0,0,0,${band})` : `rgba(255,255,255,${band})`;
+    const side = L.overlaySide;
+    if (side === "아래") ctx.fillRect(0, Math.max(0, y - pad), L.W, L.H);
+    else if (side === "위") ctx.fillRect(0, 0, L.W, Math.min(L.H, y + blockH + pad));
+    else if (side === "왼쪽") ctx.fillRect(0, 0, Math.min(L.W, L.text.x + L.text.w + pad), L.H);
+    else ctx.fillRect(Math.max(0, L.text.x - pad), 0, L.W, L.H);
+  }
+  productBox = src.product && doc.shared.product ? drawContain(ctx, src.product, L.product, doc.shared.product.scale, doc.shared.product.dx, doc.shared.product.dy) : null;
 
   ctx.fillStyle = doc.shared.textColor;
   ctx.shadowColor = doc.shared.textColor === "#ffffff" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.35)";

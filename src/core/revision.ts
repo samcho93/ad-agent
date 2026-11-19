@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import type { ComposeDoc, CopySpace, Corner, Variant, VariantCopy } from "./compose";
+import { sceneOf, type ComposeDoc, type CopySpace, type Corner, type Variant, type VariantCopy } from "./compose";
 import type { RevisionRecord } from "./delivery";
 import { factIssues, type Issue } from "./validate";
 
@@ -9,13 +9,17 @@ import { factIssues, type Issue } from "./validate";
  * - 배치·색: 바꿀 값 제안 (허용 범위를 코드가 다시 검사)
  */
 
-export const LAYOUT_FIELDS = ["copySpace", "textColor", "overlay", "productScale", "productDx", "productDy", "logoCorner", "logoScale", "buttonBg", "buttonFg", "subColor"] as const;
+export const LAYOUT_FIELDS = ["copySpace", "textColor", "overlay", "band", "sceneZoom", "sceneDx", "sceneDy", "productScale", "productDx", "productDy", "logoCorner", "logoScale", "buttonBg", "buttonFg", "subColor"] as const;
 export type LayoutField = (typeof LAYOUT_FIELDS)[number];
 
 export const LAYOUT_FIELD_LABEL: Record<LayoutField, string> = {
   copySpace: "문구 위치",
   textColor: "글자 색",
   overlay: "그라데이션 세기",
+  band: "글자 뒤 띠 진하기",
+  sceneZoom: "배경 확대",
+  sceneDx: "배경 좌우 위치",
+  sceneDy: "배경 위아래 위치",
   productScale: "제품 크기",
   productDx: "제품 좌우 위치",
   productDy: "제품 위아래 위치",
@@ -81,6 +85,10 @@ export interface RevisionDraft {
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const RANGE: Partial<Record<LayoutField, [number, number]>> = {
   overlay: [0, 0.9],
+  band: [0, 0.9],
+  sceneZoom: [1, 2],
+  sceneDx: [-0.5, 0.5],
+  sceneDy: [-0.5, 0.5],
   productScale: [0.3, 1.6],
   productDx: [-0.5, 0.5],
   productDy: [-0.5, 0.5],
@@ -134,6 +142,10 @@ export function applySuggestion(doc: ComposeDoc, s: LayoutSuggestion): ComposeDo
     case "copySpace": d.shared.copySpace = s.value as CopySpace; break;
     case "textColor": d.shared.textColor = s.value as ComposeDoc["shared"]["textColor"]; break;
     case "overlay": d.shared.overlay = n; break;
+    case "band": d.shared.band = n; break;
+    case "sceneZoom": d.shared.scene = { ...sceneOf(d.shared), zoom: n }; break;
+    case "sceneDx": d.shared.scene = { ...sceneOf(d.shared), dx: n }; break;
+    case "sceneDy": d.shared.scene = { ...sceneOf(d.shared), dy: n }; break;
     case "productScale": if (d.shared.product) d.shared.product.scale = n; break;
     case "productDx": if (d.shared.product) d.shared.product.dx = n; break;
     case "productDy": if (d.shared.product) d.shared.product.dy = n; break;
@@ -153,6 +165,10 @@ export function currentValue(doc: ComposeDoc, field: LayoutField, variant: Varia
     case "copySpace": return sh.copySpace;
     case "textColor": return sh.textColor;
     case "overlay": return String(sh.overlay);
+    case "band": return String(sh.band ?? 0);
+    case "sceneZoom": return String(sceneOf(sh).zoom);
+    case "sceneDx": return String(sceneOf(sh).dx);
+    case "sceneDy": return String(sceneOf(sh).dy);
     case "productScale": return String(sh.product?.scale ?? "-");
     case "productDx": return String(sh.product?.dx ?? "-");
     case "productDy": return String(sh.product?.dy ?? "-");

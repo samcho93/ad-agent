@@ -3,7 +3,7 @@ import { CaseError, type CaseService } from "@/core/caseService";
 import { effectiveValue } from "@/core/brief";
 import { bannedPhrases, intakeCorpus } from "@/core/intake";
 import { matchRule, ruleForPrompt } from "@/core/productRules";
-import type { ComposeDoc } from "@/core/compose";
+import { sceneOf, type ComposeDoc } from "@/core/compose";
 import type { DeliveryDoc, RevisionRecord } from "@/core/delivery";
 import { RevisionModelOutput, buildRevisionDraft, type RevisionDraft } from "@/core/revision";
 import type { Generator } from "./generator";
@@ -45,7 +45,7 @@ export async function generateRevisionDraft(svc: CaseService, caseId: string, ge
     ...(["A", "B"] as const).map(
       (k) => `- 시안 ${k}: 리드 "${v[k].lead ?? ""}" / 헤드라인 "${v[k].headline.replace(/\n/g, "\\n")}" / 서브 "${v[k].sub}" / 버튼 "${v[k].cta}" / 버튼 색 ${v[k].buttonBg} 글자 ${v[k].buttonFg} / 서브카피 색 ${v[k].subColor ?? "글자 색과 같음"}`,
     ),
-    `- 공통: 문구 위치 ${sh.copySpace}, 글자 색 ${sh.textColor}, 그라데이션 ${sh.overlay} (0~0.9)` +
+    `- 공통: 문구 위치 ${sh.copySpace}, 글자 색 ${sh.textColor}, 그라데이션 ${sh.overlay} (0~0.9), 글자 뒤 띠 ${sh.band ?? 0} (0~0.9, 0=없음), 배경 확대 ${sceneOf(sh).zoom} (1~2) 좌우 ${sceneOf(sh).dx} 위아래 ${sceneOf(sh).dy} (-0.5~0.5, 위아래 양수=그림을 위로)` +
       (sh.product ? `, 제품 크기 ${sh.product.scale} (0.3~1.6), 좌우 ${sh.product.dx} 위아래 ${sh.product.dy} (-0.5~0.5)` : ", 제품 없음") +
       (sh.logo ? `, 로고 ${sh.logo.corner} (tl/tr/bl/br) 크기 ${sh.logo.scale} (0.5~2)` : ", 로고 없음"),
     "</지금_시안>",

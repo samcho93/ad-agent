@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IntakeSchema } from "@/core/intake";
+import { IntakeSchema, intakeMismatches } from "@/core/intake";
 import { downloadJson, errMsg, go, useApp } from "../app";
 import { QUESTIONS, OBJECTIVES, ASSET_OPTIONS, CHANNEL_OPTIONS, UNKNOWN_LABEL, PRIVACY_NOTICE, parseSizeText, type Channel } from "@/core/intake";
 
@@ -7,9 +7,9 @@ type Form = {
   consent: { aiNotice: boolean; privacy: boolean; portfolio: boolean };
   contact: { company: string; contactName: string; phone: string };
   a: {
-    1: string;
+    1: string; p1: string;
     2: string; u2: boolean;
-    3: (typeof OBJECTIVES)[number] | null; u3: boolean;
+    3: (typeof OBJECTIVES)[number] | null; s3: (typeof OBJECTIVES)[number] | null; u3: boolean;
     4: string; u4: boolean;
     5: { name: string; url: string }[]; u5: boolean;
     6: string; u6: boolean;
@@ -17,7 +17,7 @@ type Form = {
     8: { likes: string; dislikes: string }; u8: boolean;
     9: boolean | null;
     10: string[]; t10: string; u10: boolean;
-    11: Channel | null; o11: string; s11: string; k11: string; u11: boolean;
+    11: Channel | null; al11: Channel[]; o11: string; s11: string; k11: string; u11: boolean;
   };
 };
 
@@ -25,10 +25,10 @@ const empty: Form = {
   consent: { aiNotice: false, privacy: false, portfolio: false },
   contact: { company: "", contactName: "", phone: "" },
   a: {
-    1: "", 2: "", u2: false, 3: null, u3: false, 4: "", u4: false,
+    1: "", p1: "", 2: "", u2: false, 3: null, s3: null, u3: false, 4: "", u4: false,
     5: [{ name: "", url: "" }, { name: "", url: "" }, { name: "", url: "" }], u5: false,
     6: "", u6: false, 7: { must: "", avoid: "" }, u7: false, 8: { likes: "", dislikes: "" }, u8: false,
-    9: null, 10: [], t10: "", u10: false, 11: null, o11: "", s11: "", k11: "", u11: false,
+    9: null, 10: [], t10: "", u10: false, 11: null, al11: [], o11: "", s11: "", k11: "", u11: false,
   },
 };
 
@@ -69,7 +69,7 @@ export default function IntakePage() {
       case 9: return f.a[9] !== null;
       case 10: return f.a[10].length > 0;
       case 11:
-        return f.a[11] !== null && (f.a[11] !== "기타" || Boolean(f.a.o11.trim())) && (!f.a.s11.trim() || parseSizeText(f.a.s11) !== null) && (!f.a.k11.trim() || Number(f.a.k11) > 0);
+        return f.a[11] !== null && ((f.a[11] !== "기타" && !f.a.al11.includes("기타")) || Boolean(f.a.o11.trim())) && (!f.a.s11.trim() || parseSizeText(f.a.s11) !== null) && (!f.a.k11.trim() || Number(f.a.k11) > 0);
       default: return true; // 5, 6, 7, 8은 비워 둘 수 있음
     }
   };
@@ -93,9 +93,9 @@ export default function IntakePage() {
       consent: { ...f.consent, consentedAt: now, noticeVersion: PRIVACY_NOTICE.version },
       contact: f.contact,
       answers: {
-        "1": { text: a[1], unknown: false },
+        "1": { text: a[1], place: a.p1.trim(), unknown: false },
         "2": { text: a.u2 ? "" : a[2], unknown: a.u2 },
-        "3": { choice: a.u3 ? null : a[3], unknown: a.u3 },
+        "3": { choice: a.u3 ? null : a[3], second: a.u3 || a.s3 === a[3] ? null : a.s3, unknown: a.u3 },
         "4": { text: a.u4 ? "" : a[4], unknown: a.u4 },
         "5": { competitors: a.u5 ? [] : a[5].filter((c) => c.name.trim() || c.url.trim()), unknown: a.u5 },
         "6": { text: a.u6 ? "" : a[6], unknown: a.u6 },
@@ -105,11 +105,17 @@ export default function IntakePage() {
         "10": { assets: a.u10 ? [] : a[10], text: a.u10 ? "" : a.t10, unknown: a.u10 },
         "11": a.u11
           ? { primary: null, other: "", size: "", maxKB: null, unknown: true }
-          : { primary: a[11], other: a.o11.trim(), size: a.s11.trim(), maxKB: a.k11.trim() ? Number(a.k11) : null, unknown: false },
+          : { primary: a[11], also: a.al11.filter((c) => c !== a[11]), other: a.o11.trim(), size: a.s11.trim(), maxKB: a.k11.trim() ? Number(a.k11) : null, unknown: false },
       },
     };
     return body;
   }
+
+  /** 서로 어긋나 보이는 답 (막지 않고 확인만) */
+  const mismatches = (): string[] => {
+    const parsed = IntakeSchema.safeParse(buildIntake());
+    return parsed.success ? intakeMismatches(parsed.data) : [];
+  };
 
   /** 담당자: 이 PC 저장소에 케이스로 저장 */
   async function saveHere() {
@@ -194,9 +200,25 @@ export default function IntakePage() {
           {!isUnknown && (q.no === 1 || q.no === 2 || q.no === 4 || q.no === 6) && (
             <textarea value={f.a[q.no]} onChange={(e) => set((d) => { d.a[q.no as 1 | 2 | 4 | 6] = e.target.value; })} />
           )}
-          {!isUnknown && q.no === 3 && OBJECTIVES.map((o) => (
-            <button key={o} className={`choice ${f.a[3] === o ? "on" : ""}`} onClick={() => set((d) => { d.a[3] = o; })}>{o}</button>
-          ))}
+          {q.no === 1 && (
+            <label className="small stack" style={{ gap: 4 }}>
+              가게가 있는 동네·지역과 가게 모습 (선택)
+              <textarea placeholder="예) 서울 마포구 망원동 주택가 골목, 빨간 벽돌 2층 건물 1층, 큰 통유리 창" value={f.a.p1} onChange={(e) => set((d) => { d.a.p1 = e.target.value; })} />
+              <span className="muted">광고 그림의 거리·건물 모습에 반영돼요. 온라인 가게라면 비워 두세요.</span>
+            </label>
+          )}
+          {!isUnknown && q.no === 3 && (
+            <div className="stack">
+              <b className="small">1순위 (필수)</b>
+              <div>{OBJECTIVES.map((o) => (
+                <button key={o} className={`choice ${f.a[3] === o ? "on" : ""}`} onClick={() => set((d) => { d.a[3] = o; if (d.a.s3 === o) d.a.s3 = null; })}>{o}</button>
+              ))}</div>
+              <b className="small">2순위 (선택)</b>
+              <div>{OBJECTIVES.filter((o) => o !== f.a[3]).map((o) => (
+                <button key={o} className={`choice ${f.a.s3 === o ? "on" : ""}`} onClick={() => set((d) => { d.a.s3 = d.a.s3 === o ? null : o; })}>{o}</button>
+              ))}</div>
+            </div>
+          )}
           {!isUnknown && q.no === 5 && f.a[5].map((c, i) => (
             <div key={i} className="card stack">
               <input type="text" placeholder={`업체 ${i + 1} 이름`} value={c.name} onChange={(e) => set((d) => { d.a[5][i].name = e.target.value; })} />
@@ -231,10 +253,15 @@ export default function IntakePage() {
           )}
           {!isUnknown && q.no === 11 && (
             <>
-              {CHANNEL_OPTIONS.map((o) => (
-                <button key={o} className={`choice ${f.a[11] === o ? "on" : ""}`} onClick={() => set((d) => { d.a[11] = o; })}>{o}</button>
-              ))}
-              {f.a[11] === "기타" && (
+              <b className="small">대표 매체 (하나)</b>
+              <div>{CHANNEL_OPTIONS.map((o) => (
+                <button key={o} className={`choice ${f.a[11] === o ? "on" : ""}`} onClick={() => set((d) => { d.a[11] = o; d.a.al11 = d.a.al11.filter((x) => x !== o); })}>{o}</button>
+              ))}</div>
+              <b className="small">함께 광고할 곳 (선택, 여러 개)</b>
+              <div>{CHANNEL_OPTIONS.filter((o) => o !== f.a[11]).map((o) => (
+                <button key={o} className={`choice ${f.a.al11.includes(o) ? "on" : ""}`} onClick={() => set((d) => { d.a.al11 = d.a.al11.includes(o) ? d.a.al11.filter((x) => x !== o) : [...d.a.al11, o]; })}>{o}</button>
+              ))}</div>
+              {(f.a[11] === "기타" || f.a.al11.includes("기타")) && (
                 <input type="text" placeholder="매체 이름 (예: 당근 비즈프로필, 유튜브)" value={f.a.o11} onChange={(e) => set((d) => { d.a.o11 = e.target.value; })} />
               )}
               <details className="card small">
@@ -272,6 +299,7 @@ export default function IntakePage() {
               return <p key={qq.no}><span className="muted">{qq.no}. {qq.title}</span><br />{u ? UNKNOWN_LABEL : summary(f, qq.no)}</p>;
             })}
           </div>
+          {mismatches().map((m) => <p key={m} className="card warn small">⚠ 확인해 주세요: {m}</p>)}
           {err && <p className="err">{err}</p>}
         </div>
       )}
@@ -300,9 +328,9 @@ export default function IntakePage() {
 function summary(f: Form, no: number): string {
   const a = f.a;
   switch (no) {
-    case 1: return a[1];
+    case 1: return [a[1], a.p1.trim() ? `(동네·가게 모습: ${a.p1.trim()})` : ""].filter(Boolean).join(" ");
     case 2: return a[2];
-    case 3: return a[3] ?? "";
+    case 3: return [a[3] ? `1순위 ${a[3]}` : "", a.s3 ? `2순위 ${a.s3}` : ""].filter(Boolean).join(", ");
     case 4: return a[4];
     case 5: return a[5].filter((c) => c.name || c.url).map((c) => c.name || c.url).join(", ") || "(없음)";
     case 6: return a[6] || "(비움)";
@@ -310,7 +338,7 @@ function summary(f: Form, no: number): string {
     case 8: return [a[8].likes, a[8].dislikes].filter(Boolean).join(" / ") || "(비움)";
     case 9: return a[9] === null ? "" : a[9] ? "있음" : "없음";
     case 10: return [a[10].join(", "), a.t10].filter(Boolean).join(" / ");
-    case 11: return [a[11] === "기타" ? a.o11 || "기타" : a[11] ?? "", a[11] !== "기타" && a.o11 ? `(${a.o11})` : "", a.s11 ? `사이즈 ${a.s11}` : "", a.k11 ? `용량 한도 ${a.k11}KB` : ""].filter(Boolean).join(" ");
+    case 11: return [a[11] === "기타" ? a.o11 || "기타" : a[11] ?? "", a[11] !== "기타" && a.o11 ? `(${a.o11})` : "", a.al11.length ? `· 함께: ${a.al11.join(", ")}` : "", a.s11 ? `사이즈 ${a.s11}` : "", a.k11 ? `용량 한도 ${a.k11}KB` : ""].filter(Boolean).join(" ");
     default: return "";
   }
 }

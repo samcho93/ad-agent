@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { type Intake, type QuestionNo, isUnknown, intakeCorpus, bannedPhrases, mediaText, OBJECTIVES } from "./intake";
+import { type Intake, type QuestionNo, isUnknown, intakeCorpus, bannedPhrases, mediaText, intakeMismatches, OBJECTIVES } from "./intake";
 import { type Tag, renderTags, withEstimate, markEstimated, hasTag } from "./tags";
 import { type Issue, factIssues, quoteSupported, reviewIndustryHits, unsupportedNumbers, vagueTarget } from "./validate";
 import type { Settings } from "./settings";
@@ -98,6 +98,9 @@ export function objectiveFromIntake(intake: Intake): ObjectiveCategory | null {
   return a.choice === "사이트·매장 방문" ? "방문·인지" : (a.choice as Exclude<(typeof OBJECTIVES)[number], "사이트·매장 방문">);
 }
 
+/** 무형(가게)이지만 대표 메뉴를 보이고 싶을 때: 실제 사진이 있어야 한다 (AI로 메뉴를 그리지 않음) */
+export const MENU_CLOSEUP_CANDIDATE = "무형, 대표 메뉴 클로즈업: 대표 메뉴의 실제 사진을 받아 누끼로 쓰고 배경만 AI 생성 (사진이 없으면 요청, AI로 메뉴를 새로 그리지 않음)";
+
 /** 이미지 방침 후보 (ad-image-router 1단계 표). 코드가 정하고 사람이 확인한다. */
 export function imagePolicyCandidates(intake: Intake): string[] {
   const has = intake.answers["9"].hasProduct;
@@ -114,6 +117,7 @@ export function imagePolicyCandidates(intake: Intake): string[] {
   return [
     "무형: 공간·사람·상황·상징 이미지를 AI로 생성 (글자·로고 없이)",
     shopPhoto ? "무형: 광고주의 실제 매장·공간 사진 사용" : "무형: 실제 매장·공간 사진 요청 후 사용",
+    MENU_CLOSEUP_CANDIDATE,
   ];
 }
 
@@ -185,6 +189,7 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
   const objectiveCategory = fromIntake ?? out.objective.category;
   // 목적(방향표 행을 정함)의 추정 여부와 KPI의 추정 여부를 나눈다
   const objectiveEstimated = fromIntake === null;
+  const secondObjective = !a["3"].unknown && a["3"].second && a["3"].second !== a["3"].choice ? a["3"].second : null;
   if (fromIntake && fromIntake !== out.objective.category) {
     issues.push({ severity: "warning", where: "objective", message: `모델이 목적을 '${out.objective.category}'로 바꾸려 해서 1부 3번 답 '${fromIntake}'로 고정함` });
   }
@@ -197,7 +202,7 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     id: "objective",
     area: "문제 정의",
     label: "광고 목적·핵심 KPI",
-    content: `목적: ${objectiveCategory}${objectiveEstimated ? " (추정: 1부 3번 모르겠음, 1~2번으로 추정)" : ""}. KPI: ${kpi}${kpiEstimated && !kpi.includes("추정") ? " (추정)" : ""}`,
+    content: `목적: ${objectiveCategory}${objectiveEstimated ? " (추정: 1부 3번 모르겠음, 1~2번으로 추정)" : ""}${secondObjective ? ` (2순위: ${secondObjective})` : ""}. KPI: ${kpi}${kpiEstimated && !kpi.includes("추정") ? " (추정)" : ""}`,
     tags: [{ kind: "intake", qs: [3] }],
     estimated: objectiveEstimated || kpiEstimated,
   });
@@ -237,7 +242,8 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     id: "evidence",
     area: "메시지",
     label: "근거",
-    content: evidenceStatus === "있음" ? supported.map((q) => `"${q}"`).join(", ") : "근거 없음 (광고주에게 후기·수치·수상 자료 보완 요청)",
+    // 항목 이름이 이미 "근거"라 내용에는 "없음"만 쓴다 ("근거 근거 없음" 겹침 방지)
+    content: evidenceStatus === "있음" ? supported.map((q) => `"${q}"`).join(", ") : "없음 (광고주에게 후기·수치·수상 자료 보완 요청)",
     tags: [{ kind: "intake", qs: [6] }],
   });
   push({
@@ -335,6 +341,9 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     content: "ad-ideation 단계에서 최소 3종(메시지와 비주얼 콘셉트 한 쌍)으로 채움",
     tags: [{ kind: "ai" }],
   });
+
+  // 서로 어긋나 보이는 질문지 답 (예: 9번 제품 없음 + "신메뉴"). 막지 않고 사람이 확인한다
+  for (const m of intakeMismatches(intake)) issues.push({ severity: "warning", where: "intake", message: m });
 
   const doc: BriefDoc = {
     version: 1,
