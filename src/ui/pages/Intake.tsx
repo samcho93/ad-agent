@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { IntakeSchema, intakeMismatches } from "@/core/intake";
+import { prefillFromDescription, type PrefillRun } from "@/llm/prefillPipeline";
+import { FAKE_PROFILE_TEXT } from "@/llm/fake";
 import { downloadJson, errMsg, go, useApp } from "../app";
 import { QUESTIONS, OBJECTIVES, ASSET_OPTIONS, CHANNEL_OPTIONS, UNKNOWN_LABEL, PRIVACY_NOTICE, parseSizeText, type Channel } from "@/core/intake";
 
@@ -32,11 +34,56 @@ const empty: Form = {
   },
 };
 
+/** 문항별로 비교할 답 (AI 초안을 사람이 고쳤는지 볼 때) */
+function answerKey(f: Form, no: number): string {
+  const a = f.a;
+  const pick: Record<number, unknown> = {
+    0: f.contact.company,
+    1: [a[1], a.p1],
+    2: [a[2], a.u2],
+    3: [a[3], a.s3, a.u3],
+    4: [a[4], a.u4],
+    5: [a[5], a.u5],
+    6: [a[6], a.u6],
+    7: [a[7], a.u7],
+    8: [a[8], a.u8],
+    9: a[9],
+    10: [a[10], a.t10, a.u10],
+    11: [a[11], a.al11, a.o11, a.u11],
+  };
+  return JSON.stringify(pick[no] ?? null);
+}
+
+/** AI 초안을 폼에 넣는다 (값이 있는 문항만) */
+function applyPrefill(base: Form, run: PrefillRun): Form {
+  const d = structuredClone(base);
+  const x = run.result;
+  if (x.company) d.contact.company = x.company;
+  if (x.q1?.text) d.a[1] = x.q1.text;
+  if (x.q1?.place) d.a.p1 = x.q1.place;
+  if (x.q2) { d.a[2] = x.q2; d.a.u2 = false; }
+  if (x.q3) { d.a[3] = x.q3.choice; d.a.s3 = x.q3.second; d.a.u3 = false; }
+  if (x.q4) { d.a[4] = x.q4; d.a.u4 = false; }
+  if (x.q5) { d.a[5] = [0, 1, 2].map((i) => x.q5![i] ?? { name: "", url: "" }); d.a.u5 = false; }
+  if (x.q6) { d.a[6] = x.q6; d.a.u6 = false; }
+  if (x.q7) { d.a[7] = { ...x.q7 }; d.a.u7 = false; }
+  if (x.q8) { d.a[8] = { ...x.q8 }; d.a.u8 = false; }
+  if (x.q9 !== undefined) d.a[9] = x.q9;
+  if (x.q10) { d.a[10] = [...x.q10]; d.a.u10 = false; }
+  if (x.q11) { d.a[11] = x.q11.primary; d.a.al11 = [...x.q11.also]; d.a.o11 = x.q11.other; d.a.u11 = false; }
+  return d;
+}
+
 /** 광고주 모드(#/intake?mode=client): 저장소 없이 답변 파일만 내려받아 담당자에게 보낸다 */
 const isClientMode = () => new URLSearchParams(location.hash.split("?")[1] ?? "").get("mode") === "client";
 
 export default function IntakePage() {
-  const { svc } = useApp();
+  const { svc, generator } = useApp();
+  // 질문지 전에: 사업 설명 → AI 초안 (담당자 화면에서만. 광고주 화면에는 LLM 연결이 없다)
+  const [profileText, setProfileText] = useState("");
+  const [prefill, setPrefill] = useState<{ run: PrefillRun; snap: Form; at: string } | null>(null);
+  const [prefillBusy, setPrefillBusy] = useState(false);
+  const [prefillErr, setPrefillErr] = useState("");
   const clientMode = isClientMode();
   const [done, setDone] = useState(false);
   const [f, setF] = useState<Form>(empty);
@@ -91,6 +138,21 @@ export default function IntakePage() {
       version: 1,
       submittedAt: now,
       consent: { ...f.consent, consentedAt: now, noticeVersion: PRIVACY_NOTICE.version },
+      ...(prefill
+        ? {
+            profile: {
+              text: prefill.run.text,
+              model: prefill.run.model,
+              filledAt: prefill.at,
+              // 사람이 고치지 않은 문항만 출처를 남긴다 (고친 문항은 사람의 답, 모르겠음은 그대로 모르겠음)
+              sources: Object.fromEntries(
+                Object.keys(prefill.run.result.sources)
+                  .map((k) => [k, prefillSource(Number(k))] as const)
+                  .filter((e): e is readonly [string, "text" | "estimate"] => e[1] !== null),
+              ),
+            },
+          }
+        : {}),
       contact: f.contact,
       answers: {
         "1": { text: a[1], place: a.p1.trim(), unknown: false },
@@ -111,6 +173,31 @@ export default function IntakePage() {
     return body;
   }
 
+  /** 이 문항이 AI 초안에서 왔고 아직 고치지 않았으면 그 출처 */
+  const prefillSource = (no: number): "text" | "estimate" | null => {
+    if (!prefill) return null;
+    const src = prefill.run.result.sources[String(no)];
+    if (!src) return null;
+    return answerKey(f, no) === answerKey(prefill.snap, no) ? src : null;
+  };
+  const prefillEdited = (no: number) => !!prefill?.run.result.sources[String(no)] && prefillSource(no) === null;
+
+  async function runPrefill() {
+    setPrefillBusy(true);
+    setPrefillErr("");
+    try {
+      const run = await prefillFromDescription(generator(), profileText);
+      const next = applyPrefill(f, run);
+      setF(next);
+      setPrefill({ run, snap: next, at: new Date().toISOString() });
+      setProfileText(run.text);
+    } catch (e) {
+      setPrefillErr(errMsg(e));
+    } finally {
+      setPrefillBusy(false);
+    }
+  }
+
   /** 서로 어긋나 보이는 답 (막지 않고 확인만) */
   const mismatches = (): string[] => {
     const parsed = IntakeSchema.safeParse(buildIntake());
@@ -123,6 +210,7 @@ export default function IntakePage() {
     setErr("");
     try {
       const meta = await svc.createCase(buildIntake());
+      if (prefill) await svc.log(meta.id, prefill.run.log);
       go("cases", meta.id);
     } catch (e) {
       setErr(errMsg(e));
@@ -182,6 +270,40 @@ export default function IntakePage() {
             <input type="checkbox" checked={f.consent.portfolio} onChange={(e) => set((d) => { d.consent.portfolio = e.target.checked; })} />
             <span>완성된 광고를 포트폴리오로 써도 좋아요 (선택)</span>
           </label>
+          {!clientMode && (
+            <div className="card stack small">
+              <b>사업 설명으로 질문지 미리 채우기 (선택)</b>
+              <span className="muted">
+                사업주에게 들은 내용(업종, 파는 것, 가게 위치·분위기, 손님, 고민, 하고 싶은 것)을 자유롭게 적으면 AI가 분석해 질문지 답 초안을 채웁니다.
+                글에 있는 내용은 <b>사업 설명에서</b>, 글에 없어 추측한 내용은 <b>AI 추정</b>으로 표시되고, 질문을 넘기며 하나씩 확인·수정합니다.
+                설명 원문은 케이스에 함께 보관되어 브리프·아이디어·이미지 프롬프트에 참고로 쓰입니다. 담당자 이름·연락처는 적지 마세요 (전화번호·이메일은 자동으로 지웁니다).
+              </span>
+              <textarea
+                rows={6}
+                placeholder="예) 망원동 주택가 골목 안 작은 카페예요. 매일 원두를 직접 볶고, 이번에 신메뉴 말차크림라떼를 냈어요. 큰길에서 한 블록 들어와 있어서 동네 사람들도 잘 몰라요…"
+                value={profileText}
+                onChange={(e) => setProfileText(e.target.value)}
+                disabled={prefillBusy}
+              />
+              <div className="row">
+                <button className="primary" disabled={prefillBusy || !f.consent.aiNotice || !f.consent.privacy || profileText.trim().length < 10} onClick={runPrefill}>
+                  {prefillBusy ? "분석 중… (1분 안쪽)" : prefill ? "다시 분석해서 채우기" : "AI로 분석해서 질문지 채우기"}
+                </button>
+                {import.meta.env.MODE === "fake" && <button onClick={() => setProfileText(FAKE_PROFILE_TEXT)} disabled={prefillBusy}>예시 넣기</button>}
+                {(!f.consent.aiNotice || !f.consent.privacy) && <span className="muted">위 필수 동의를 먼저 체크하세요</span>}
+              </div>
+              {prefillErr && <p className="err" style={{ margin: 0 }}>⚠ {prefillErr}</p>}
+              {prefill && (
+                <div className="stack" style={{ gap: 4 }}>
+                  <span className="okc">
+                    채운 문항: {Object.keys(prefill.run.result.sources).sort((a, b) => Number(a) - Number(b)).map((k) => `${k}번${prefill.run.result.sources[k] === "estimate" ? "(추정)" : ""}`).join(", ") || "없음"} · {prefill.run.model}
+                  </span>
+                  {prefill.run.result.notes.map((n) => <span key={n} className="muted">· {n}</span>)}
+                  <span className="muted">"다음"을 눌러 문항마다 확인하세요. 담당자 이름·연락처는 직접 넣어야 합니다.</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -189,6 +311,9 @@ export default function IntakePage() {
         <div className="stack">
           <h1>{q.title}</h1>
           {q.help && <p className="small muted">{q.help}</p>}
+          {prefillSource(q.no) === "text" && <p className="small okc" style={{ margin: 0 }}>✓ AI가 사업 설명에서 채움 — 맞는지 확인하세요</p>}
+          {prefillSource(q.no) === "estimate" && <p className="small warn" style={{ margin: 0 }}>⚠ AI 추정 (사업 설명에 없어 추측함) — 맞으면 그대로, 아니면 고쳐 주세요. 고치지 않으면 브리프에서도 '추정'으로 남아요</p>}
+          {prefillEdited(q.no) && <p className="small muted" style={{ margin: 0 }}>AI 초안을 고쳤어요 (사람의 답으로 저장)</p>}
 
           {!isUnknown && q.no === 0 && (
             <div className="stack">
@@ -296,7 +421,8 @@ export default function IntakePage() {
             <p><strong>{f.contact.company}</strong> · {f.contact.contactName}</p>
             {QUESTIONS.slice(1).map((qq) => {
               const u = (f.a as Record<string, unknown>)[`u${qq.no}`];
-              return <p key={qq.no}><span className="muted">{qq.no}. {qq.title}</span><br />{u ? UNKNOWN_LABEL : summary(f, qq.no)}</p>;
+              const src = u ? null : prefillSource(qq.no);
+              return <p key={qq.no}><span className="muted">{qq.no}. {qq.title}</span>{src === "estimate" && <span className="warn"> [AI 추정]</span>}{src === "text" && <span className="okc"> [사업 설명에서]</span>}<br />{u ? UNKNOWN_LABEL : summary(f, qq.no)}</p>;
             })}
           </div>
           {mismatches().map((m) => <p key={m} className="card warn small">⚠ 확인해 주세요: {m}</p>)}

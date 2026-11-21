@@ -57,6 +57,18 @@ export const IntakeSchema = z.object({
     /** 동의할 때 보여 준 안내 문구 판 (문구가 바뀌어도 무엇에 동의했는지 알 수 있게) */
     noticeVersion: z.string().optional(),
   }),
+  /**
+   * 사업주가 쓴 사업 설명(연락처는 지운 것)과, AI가 그 글로 미리 채운 문항의 출처 (선택).
+   * sources: 문항 번호 → "text"(설명에 있음) / "estimate"(AI 추정, 사람이 고치지 않음). 사람이 고친 문항은 빠진다.
+   */
+  profile: z
+    .object({
+      text: z.string().max(8000),
+      model: z.string().default(""),
+      filledAt: z.string().default(""),
+      sources: z.record(z.string(), z.enum(["text", "estimate"])).default({}),
+    })
+    .optional(),
   contact: z.object({
     company: z.string().trim().min(1),
     contactName: z.string().trim().min(1),
@@ -120,6 +132,16 @@ export function isUnknown(intake: Intake, no: QuestionNo): boolean {
   return Boolean(a.unknown);
 }
 
+/** AI가 사업 설명으로 추측해 채우고 사람이 고치지 않은 답인지 */
+export function isAiEstimated(intake: Intake, no: QuestionNo): boolean {
+  return intake.profile?.sources[String(no)] === "estimate";
+}
+
+/** 브리프에서 "추정"으로 다룰 답: 모르겠음이거나 AI 추정 */
+export function isEstimatedAnswer(intake: Intake, no: QuestionNo): boolean {
+  return isUnknown(intake, no) || isAiEstimated(intake, no);
+}
+
 export function unknownQuestions(intake: Intake): QuestionNo[] {
   return QUESTIONS.map((q) => q.no).filter((no) => isUnknown(intake, no));
 }
@@ -131,13 +153,14 @@ export function unknownQuestions(intake: Intake): QuestionNo[] {
 export function intakeForModel(intake: Intake): string {
   const a = intake.answers;
   const u = (flag: boolean, v: string) => (flag ? UNKNOWN_LABEL : v.trim() || "(빈칸)");
+  const est = (no: QuestionNo) => (isAiEstimated(intake, no) && !isUnknown(intake, no) ? " (추정: AI가 사업 설명으로 추측, 광고주 확인 전)" : "");
   const lines = [
     `0번 상호: ${intake.contact.company}`,
-    `1번 무엇을 팔거나 알리나: ${a["1"].text}`,
+    `1번 무엇을 팔거나 알리나: ${a["1"].text}${est(1)}`,
     `1번 가게 동네·지역·모습: ${a["1"].place.trim() || "(빈칸)"}`,
-    `2번 타깃: ${u(a["2"].unknown, a["2"].text)}`,
-    `3번 광고 목적: ${u(a["3"].unknown, objectiveText(a["3"]))}`,
-    `4번 가장 큰 고민: ${u(a["4"].unknown, a["4"].text)}`,
+    `2번 타깃: ${u(a["2"].unknown, a["2"].text)}${est(2)}`,
+    `3번 광고 목적: ${u(a["3"].unknown, objectiveText(a["3"]))}${est(3)}`,
+    `4번 가장 큰 고민: ${u(a["4"].unknown, a["4"].text)}${est(4)}`,
     `5번 경쟁 업체: ${u(
       a["5"].unknown,
       a["5"].competitors.filter((c) => c.name || c.url).map((c) => `${c.name}${c.url ? ` (${c.url})` : ""}`).join(", "),
@@ -146,10 +169,12 @@ export function intakeForModel(intake: Intake): string {
     `7번 꼭 넣을 말: ${u(a["7"].unknown, a["7"].must)}`,
     `7번 쓰면 안 되는 말: ${u(a["7"].unknown, a["7"].avoid)}`,
     `8번 마음에 드는 광고: ${u(a["8"].unknown, a["8"].likes)} / 싫은 광고: ${u(a["8"].unknown, a["8"].dislikes)}`,
-    `9번 보여 줄 제품: ${a["9"].hasProduct ? "있음" : "없음"}`,
+    `9번 보여 줄 제품: ${a["9"].hasProduct ? "있음" : "없음"}${est(9)}`,
     `10번 사진·로고: ${u(a["10"].unknown, [...a["10"].assets, a["10"].text].filter(Boolean).join(", "))}`,
-    `11번 매체: ${u(a["11"].unknown, mediaText(a["11"]))}`,
+    `11번 매체: ${u(a["11"].unknown, mediaText(a["11"]))}${est(11)}`,
   ];
+  const profile = intake.profile?.text.trim();
+  if (profile) lines.push("", "사업주가 직접 쓴 사업 설명 (원문, 연락처는 지움):", profile);
   return lines.join("\n");
 }
 
@@ -157,19 +182,22 @@ export function intakeForModel(intake: Intake): string {
 export function intakeCorpus(intake: Intake): string {
   // 질문 번호("1번") 같은 라벨은 넣지 않는다. 라벨의 숫자가 지어낸 숫자를 통과시키지 않게.
   const a = intake.answers;
+  // AI가 추측한 답은 광고주가 준 사실이 아니므로 근거 검사 자료에 넣지 않는다
+  const own = (no: QuestionNo, v: string) => (isAiEstimated(intake, no) ? "" : v);
   return [
     intake.contact.company,
-    a["1"].text,
+    intake.profile?.text ?? "",
+    own(1, a["1"].text),
     a["1"].place,
-    a["2"].unknown ? "" : a["2"].text,
-    a["3"].unknown ? "" : objectiveText(a["3"]),
-    a["4"].unknown ? "" : a["4"].text,
+    a["2"].unknown ? "" : own(2, a["2"].text),
+    a["3"].unknown ? "" : own(3, objectiveText(a["3"])),
+    a["4"].unknown ? "" : own(4, a["4"].text),
     a["5"].unknown ? "" : a["5"].competitors.map((c) => `${c.name} ${c.url}`).join(" "),
     a["6"].unknown ? "" : a["6"].text,
     a["7"].unknown ? "" : `${a["7"].must} ${a["7"].avoid}`,
     a["8"].unknown ? "" : `${a["8"].likes} ${a["8"].dislikes}`,
     a["10"].unknown ? "" : `${a["10"].assets.join(" ")} ${a["10"].text}`,
-    a["11"].unknown ? "" : mediaText(a["11"]),
+    a["11"].unknown ? "" : own(11, mediaText(a["11"])),
   ].join("\n");
 }
 

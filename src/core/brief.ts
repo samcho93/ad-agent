@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { type Intake, type QuestionNo, isUnknown, intakeCorpus, bannedPhrases, mediaText, intakeMismatches, OBJECTIVES } from "./intake";
+import { type Intake, type QuestionNo, isEstimatedAnswer, isAiEstimated, intakeCorpus, bannedPhrases, mediaText, intakeMismatches, OBJECTIVES } from "./intake";
 import { type Tag, renderTags, withEstimate, markEstimated, hasTag } from "./tags";
 import { type Issue, factIssues, quoteSupported, reviewIndustryHits, unsupportedNumbers, vagueTarget } from "./validate";
 import type { Settings } from "./settings";
@@ -89,7 +89,8 @@ export interface BriefDoc {
   decisions: Record<string, Decision>;
 }
 
-const anyUnknown = (intake: Intake, qs: QuestionNo[]) => qs.some((q) => isUnknown(intake, q));
+/** 모르겠음이거나 AI가 사업 설명으로 추측한 답이면 그 답에 기댄 항목은 추정 */
+const anyUnknown = (intake: Intake, qs: QuestionNo[]) => qs.some((q) => isEstimatedAnswer(intake, q));
 
 /** 3번 답을 목적 4종으로. 모르겠음이면 null */
 export function objectiveFromIntake(intake: Intake): ObjectiveCategory | null {
@@ -188,7 +189,8 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
   const fromIntake = objectiveFromIntake(intake);
   const objectiveCategory = fromIntake ?? out.objective.category;
   // 목적(방향표 행을 정함)의 추정 여부와 KPI의 추정 여부를 나눈다
-  const objectiveEstimated = fromIntake === null;
+  const objectiveAi = fromIntake !== null && isAiEstimated(intake, 3);
+  const objectiveEstimated = fromIntake === null || objectiveAi;
   const secondObjective = !a["3"].unknown && a["3"].second && a["3"].second !== a["3"].choice ? a["3"].second : null;
   if (fromIntake && fromIntake !== out.objective.category) {
     issues.push({ severity: "warning", where: "objective", message: `모델이 목적을 '${out.objective.category}'로 바꾸려 해서 1부 3번 답 '${fromIntake}'로 고정함` });
@@ -202,7 +204,7 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     id: "objective",
     area: "문제 정의",
     label: "광고 목적·핵심 KPI",
-    content: `목적: ${objectiveCategory}${objectiveEstimated ? " (추정: 1부 3번 모르겠음, 1~2번으로 추정)" : ""}${secondObjective ? ` (2순위: ${secondObjective})` : ""}. KPI: ${kpi}${kpiEstimated && !kpi.includes("추정") ? " (추정)" : ""}`,
+    content: `목적: ${objectiveCategory}${objectiveAi ? " (추정: AI가 사업 설명으로 추측, 광고주 확인 필요)" : objectiveEstimated ? " (추정: 1부 3번 모르겠음, 1~2번으로 추정)" : ""}${secondObjective ? ` (2순위: ${secondObjective})` : ""}. KPI: ${kpi}${kpiEstimated && !kpi.includes("추정") ? " (추정)" : ""}`,
     tags: [{ kind: "intake", qs: [3] }],
     estimated: objectiveEstimated || kpiEstimated,
   });
@@ -277,7 +279,7 @@ export function buildBrief(intake: Intake, out: BriefModelOutput, settings: Sett
     content: "ad-image-router 기준 후보. 광고주 확인 필요",
     candidates: imagePolicyCandidates(intake),
     tags: [{ kind: "user" }],
-    estimated: isUnknown(intake, 10),
+    estimated: isEstimatedAnswer(intake, 10),
   });
 
   /* 제작 조건 */

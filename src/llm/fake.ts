@@ -1,5 +1,6 @@
 /** 개발·테스트용 가짜 모델 응답 (가상 광고주: 동네 수제 쿠키 가게). 실제 광고주 케이스에는 쓰지 않는다. */
 import type { Generator } from "./generator";
+import type { PrefillModelOutput } from "@/core/prefill";
 import type { BriefModelOutput } from "@/core/brief";
 import type { IdeaModelOutput } from "@/core/ideas";
 
@@ -141,7 +142,33 @@ export function goodRevision() {
   };
 }
 
+/** 가짜 사업 설명 (가상 카페). 가짜 모드의 "예시 넣기"와 테스트에서 쓴다 */
+export const FAKE_PROFILE_TEXT =
+  "오후세시커피입니다. 서울 망원동 주택가 골목 안, 빨간 벽돌 건물 1층에 있는 작은 카페예요. 매일 직접 원두를 볶고, 이번에 신메뉴 말차크림라떼를 냈어요. 큰길에서 한 블록 들어와 있어서 동네 사람들도 잘 몰라요. 인스타그램에 올리고 싶고, 매장 사진과 로고 파일은 있어요. 연락은 010-1234-5678 으로 주세요.";
+
+/** FAKE_PROFILE_TEXT 에 맞춘 가짜 분석 결과. 일부러 원문에 없는 인용·지어낸 숫자를 섞어 코드 검사를 보인다 */
+export function goodPrefill(): PrefillModelOutput {
+  const none = { value: "", source: "none" as const, quote: "" };
+  return {
+    company: { value: "오후세시커피", source: "text", quote: "오후세시커피입니다" },
+    what: { value: "골목 안 작은 카페, 직접 볶은 원두 커피와 신메뉴 말차크림라떼", source: "text", quote: "신메뉴 말차크림라떼를 냈어요" },
+    place: { value: "서울 망원동 주택가 골목 안, 빨간 벽돌 건물 1층", source: "text", quote: "서울 망원동 주택가 골목 안, 빨간 벽돌 건물 1층" },
+    target: { value: "근처에 사는 20~30대 동네 주민", source: "estimate", quote: "" },
+    objective: { first: "사이트·매장 방문", second: "매출", source: "estimate", quote: "" },
+    worry: { value: "큰길에서 한 블록 들어와 있어 동네 사람들도 가게를 잘 모름", source: "text", quote: "큰길에서 한 블록 들어와 있어서 동네 사람들도 잘 몰라요" },
+    competitors: { value: [{ name: "스타벅스 망원역점", url: "" }], source: "estimate", quote: "" },
+    strength: { value: "매일 직접 원두를 볶음, 단골 재방문율 80%", source: "text", quote: "매일 직접 원두를 볶고" },
+    mustSay: none,
+    avoidSay: none,
+    likes: none,
+    dislikes: none,
+    hasProduct: { value: "없음", source: "estimate", quote: "" },
+    assets: { value: ["매장·공간 사진", "로고 파일"], source: "text", quote: "매장 사진과 로고 파일은 있어요" },
+    media: { primary: "인스타그램·페이스북", also: [], other: "", source: "text", quote: "인스타그램에 올리고 싶고" },
+  };
+}
+
 /** 가짜 모드(npm run dev:fake) 화면 시험용 */
 export function devFakeGenerator(): Generator {
-  return scriptedGenerator({ brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()], qa: [goodQa(["B_1200x628.png"])], revision: [goodRevision()] });
+  return scriptedGenerator({ intake_prefill: [goodPrefill(), goodPrefill(), goodPrefill()], brief: [goodBrief()], ideas: [goodIdeas()], image_prompt: [goodImagePrompt()], qa: [goodQa(["B_1200x628.png"])], revision: [goodRevision()] });
 }
