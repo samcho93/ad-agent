@@ -3,7 +3,9 @@ import { ComposeService, renderFile } from "@/core/composeService";
 import { SIZES, SIZE_LABEL, sceneOf, sizeLabel as sizeLabelOf, type ComposeDoc, type CopySpace, type Corner, type SizeKey, type Variant, type VariantCopy } from "@/core/compose";
 import type { Issue } from "@/core/validate";
 import { loadFonts } from "@/render/fonts";
-import { canvasToPng, loadComposeSources, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
+import { canvasToPng, loadComposeSources, matchProductColor, productFrames, renderBanner, type RenderCheck, type Sources } from "@/render/composeCanvas";
+import { DEFAULT_FX, colorIsNeutral, fxOf, fxSummary, type ProductFx, type ShadowKind } from "@/core/productFx";
+import type { Box } from "@/core/compose";
 import { reached, type CaseStatus } from "@/core/caseService";
 import { errMsg, useApp } from "../app";
 import { RevisionAssist } from "./RevisionAssist";
@@ -23,6 +25,9 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState<Record<string, string>>({});
   const canvases = { A: useRef<HTMLCanvasElement>(null), B: useRef<HTMLCanvasElement>(null) };
+  // 미리보기에서 제품을 끌어 옮기기·크기 바꾸기
+  const [frames, setFrames] = useState<Partial<Record<Variant, Box>>>({});
+  const drag = useRef<{ mode: "move" | "scale"; v: Variant; px: number; py: number; dx: number; dy: number; scale: number; cx: number; cy: number; area: Box } | null>(null);
 
   // 처음: 명세, 이미지, 폰트
   useEffect(() => {
@@ -69,8 +74,16 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
   // 미리보기 + 모든 사이즈 점검
   useEffect(() => {
     if (!doc || !src) return;
+    // 미리보기는 바로 그린다 (끌어 옮길 때 끊기지 않게). 모든 사이즈 점검은 잠시 뒤에
+    const fr: Partial<Record<Variant, Box>> = {};
+    for (const v of VARIANTS) {
+      const c = canvases[v].current;
+      if (!c) continue;
+      renderBanner(doc, v, size, src, c);
+      fr[v] = productFrames.get(c)?.box;
+    }
+    setFrames(fr);
     const t = setTimeout(async () => {
-      for (const v of VARIANTS) if (canvases[v].current) renderBanner(doc, v, size, src, canvases[v].current!);
       const off = document.createElement("canvas");
       const all: RenderCheck[] = [];
       for (const v of VARIANTS) for (const s of doc.shared.sizes) all.push(...renderBanner(doc, v, s, src, off));
@@ -89,6 +102,59 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
     setDoc(d);
     setDirty(true);
   };
+  const setFx = (fn: (fx: ProductFx) => void) =>
+    edit((d) => {
+      if (!d.shared.product) return;
+      const fx = fxOf(d.shared.product);
+      fn(fx);
+      d.shared.product.fx = fx;
+    });
+  const fx = fxOf(doc.shared.product);
+  const locked = reached(status as CaseStatus, "gate2_approved");
+
+  /** 화면 좌표 → 캔버스 픽셀 */
+  const toCanvas = (v: Variant, e: React.PointerEvent) => {
+    const c = canvases[v].current!;
+    const r = c.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height, k: c.width / r.width };
+  };
+  const onDown = (v: Variant) => (e: React.PointerEvent<HTMLDivElement>) => {
+    const c = canvases[v].current;
+    const f = c && productFrames.get(c);
+    if (locked || !f || !doc.shared.product) return;
+    const p = toCanvas(v, e);
+    const b = f.box;
+    const grip = 16 * p.k;
+    const onHandle = Math.abs(p.x - (b.x + b.w)) < grip && Math.abs(p.y - (b.y + b.h)) < grip;
+    if (!onHandle && (p.x < b.x || p.x > b.x + b.w || p.y < b.y || p.y > b.y + b.h)) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const pr = doc.shared.product;
+    drag.current = { mode: onHandle ? "scale" : "move", v, px: p.x, py: p.y, dx: pr.dx, dy: pr.dy, scale: pr.scale, cx: b.x + b.w / 2, cy: b.y + b.h / 2, area: f.area };
+  };
+  const onMove = (v: Variant) => (e: React.PointerEvent<HTMLDivElement>) => {
+    const g = drag.current;
+    if (!g || g.v !== v) return;
+    const p = toCanvas(v, e);
+    const round = (n: number) => Math.round(n * 1000) / 1000;
+    if (g.mode === "move") {
+      edit((d) => {
+        d.shared.product!.dx = round(Math.max(-1, Math.min(1, g.dx + (p.x - g.px) / g.area.w)));
+        d.shared.product!.dy = round(Math.max(-1, Math.min(1, g.dy + (p.y - g.py) / g.area.h)));
+      });
+    } else {
+      const d0 = Math.hypot(g.px - g.cx, g.py - g.cy) || 1;
+      const d1 = Math.hypot(p.x - g.cx, p.y - g.cy);
+      edit((d) => { d.shared.product!.scale = round(Math.max(0.1, Math.min(4, g.scale * (d1 / d0)))); });
+    }
+  };
+  const onUp = () => { drag.current = null; };
+  const autoMatch = () => {
+    const c = matchProductColor(doc, size === "320x100" ? "1080x1080" : size, src);
+    if (c) setFx((f) => { f.color = c; });
+    else setErr("배경 색을 읽지 못했습니다");
+  };
+
   const setCopy = (v: Variant, patch: Partial<VariantCopy>) => edit((d) => Object.assign(d.variants[v], patch));
   const errors = [...checks.filter((c) => c.severity === "error"), ...copyIssues.filter((i) => i.severity === "error")];
   const warnings = [...checks.filter((c) => c.severity === "warning"), ...copyIssues.filter((i) => i.severity === "warning")];
@@ -133,7 +199,6 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
     });
 
   const checkLabel = (c: RenderCheck) => `${c.variant} · ${sizeLabelOf(c.size)}`;
-  const locked = reached(status as CaseStatus, "gate2_approved");
 
   return (
     <div className="stack">
@@ -150,7 +215,19 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
         {VARIANTS.map((v) => (
           <div key={v} className="card stack small">
             <b>시안 {v}</b>
-            <canvas ref={canvases[v]} style={{ width: "100%", height: "auto", border: "1px solid var(--line)", background: "#fff" }} />
+            <div style={{ position: "relative", touchAction: frames[v] && !locked ? "none" : undefined }} onPointerDown={onDown(v)} onPointerMove={onMove(v)} onPointerUp={onUp} onPointerCancel={onUp}>
+              <canvas ref={canvases[v]} style={{ width: "100%", height: "auto", border: "1px solid var(--line)", background: "#fff", display: "block" }} />
+              {frames[v] && !locked && canvases[v].current && (() => {
+                const c = canvases[v].current!;
+                const b = frames[v]!;
+                const pct = (n: number, of: number) => `${(n / of) * 100}%`;
+                return (
+                  <div style={{ position: "absolute", left: pct(b.x, c.width), top: pct(b.y, c.height), width: pct(b.w, c.width), height: pct(b.h, c.height), outline: "1px dashed rgba(255,255,255,0.9)", boxShadow: "0 0 0 1px rgba(0,0,0,0.35)", cursor: "move", pointerEvents: "none" }}>
+                    <div title="끌어서 크기 조절" style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#fff", border: "2px solid #b4541f", borderRadius: 2 }} />
+                  </div>
+                );
+              })()}
+            </div>
             {checks.filter((c) => c.variant === v && c.size === size).map((c, i) => (
               <div key={i} className={c.severity === "error" ? "err" : "warn"}>⚠ {c.message}</div>
             ))}
@@ -215,11 +292,47 @@ export function ComposeSection({ caseId, name, status, onChanged }: { caseId: st
           <span className="muted small">글자가 그림 속 메뉴·사람과 겹치면: 확대한 뒤 위아래로 그림을 옮기고, 글자 뒤 띠를 켜세요. (같은 비율의 그림은 확대해야 움직입니다)</span>
         </div>
         {doc.shared.product && (
-          <div className="row">
-            <span>제품 누끼</span>
-            <label className="row">크기 <input type="range" min={0.3} max={1.6} step={0.05} value={doc.shared.product.scale} onChange={(e) => edit((d) => { d.shared.product!.scale = Number(e.target.value); })} /></label>
-            <label className="row">좌우 <input type="range" min={-0.5} max={0.5} step={0.02} value={doc.shared.product.dx} onChange={(e) => edit((d) => { d.shared.product!.dx = Number(e.target.value); })} /></label>
-            <label className="row">위아래 <input type="range" min={-0.5} max={0.5} step={0.02} value={doc.shared.product.dy} onChange={(e) => edit((d) => { d.shared.product!.dy = Number(e.target.value); })} /></label>
+          <div className="stack" style={{ gap: 6, borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+            <span><b>제품 누끼 합성</b> <span className="muted">— 미리보기에서 제품을 끌어 옮기고, 오른쪽 아래 점을 끌어 크기를 바꿉니다. 원본 사진 파일은 바뀌지 않고 값만 저장합니다.</span></span>
+            <div className="row">
+              <label className="row">크기 <input type="range" min={0.1} max={4} step={0.05} value={doc.shared.product.scale} onChange={(e) => edit((d) => { d.shared.product!.scale = Number(e.target.value); })} /></label>
+              <label className="row">좌우 <input type="range" min={-1} max={1} step={0.01} value={doc.shared.product.dx} onChange={(e) => edit((d) => { d.shared.product!.dx = Number(e.target.value); })} /></label>
+              <label className="row">위아래 <input type="range" min={-1} max={1} step={0.01} value={doc.shared.product.dy} onChange={(e) => edit((d) => { d.shared.product!.dy = Number(e.target.value); })} /></label>
+              <label className="row">회전 <input type="range" min={-180} max={180} step={1} value={fx.rotate} onChange={(e) => setFx((f) => { f.rotate = Number(e.target.value); })} /><span className="muted">{fx.rotate}°</span></label>
+              <label className="row"><input type="checkbox" checked={fx.flip} onChange={(e) => setFx((f) => { f.flip = e.target.checked; })} /> 좌우 반전</label>
+            </div>
+            <div className="row">
+              <label className="row">그림자
+                <select value={fx.shadow.kind} onChange={(e) => setFx((f) => { f.shadow.kind = e.target.value as ShadowKind; })}>
+                  <option value="none">없음</option>
+                  <option value="ground">바닥 그림자 (놓여 있는 느낌)</option>
+                  <option value="drop">드롭 그림자 (떠 있는 느낌)</option>
+                </select>
+              </label>
+              {fx.shadow.kind !== "none" && (
+                <>
+                  <label className="row" title="0 = 오른쪽, 90 = 아래, 180 = 왼쪽">방향 <input type="range" min={0} max={360} step={5} value={fx.shadow.angle} onChange={(e) => setFx((f) => { f.shadow.angle = Number(e.target.value); })} /></label>
+                  <label className="row">거리 <input type="range" min={0} max={0.5} step={0.01} value={fx.shadow.distance} onChange={(e) => setFx((f) => { f.shadow.distance = Number(e.target.value); })} /></label>
+                  <label className="row">흐림 <input type="range" min={0} max={0.3} step={0.01} value={fx.shadow.blur} onChange={(e) => setFx((f) => { f.shadow.blur = Number(e.target.value); })} /></label>
+                  <label className="row">진하기 <input type="range" min={0} max={1} step={0.05} value={fx.shadow.opacity} onChange={(e) => setFx((f) => { f.shadow.opacity = Number(e.target.value); })} /></label>
+                </>
+              )}
+            </div>
+            <div className="row">
+              <span>색</span>
+              {([["brightness", "밝기"], ["contrast", "대비"], ["saturation", "채도"], ["warmth", "색온도(차갑게↔따뜻하게)"]] as const).map(([k, label]) => (
+                <label key={k} className="row">{label} <input type="range" min={-100} max={100} step={1} value={fx.color[k]} onChange={(e) => setFx((f) => { f.color[k] = Number(e.target.value); })} /><span className="muted">{fx.color[k]}</span></label>
+              ))}
+            </div>
+            <div className="row">
+              <button onClick={autoMatch} title="제품이 놓인 자리의 배경 밝기·채도·색온도 쪽으로 제품 색을 절반만큼 맞춥니다">배경에 자동 맞춤</button>
+              <button disabled={colorIsNeutral(fx.color)} onClick={() => setFx((f) => { f.color = { ...DEFAULT_FX.color }; })}>색 보정 되돌리기</button>
+              <label className="row" title="누끼 가장자리를 안쪽으로 살짝 투명하게 해 배경에 녹아들게 합니다">가장자리 부드럽게 <input type="range" min={0} max={0.1} step={0.005} value={fx.feather} onChange={(e) => setFx((f) => { f.feather = Number(e.target.value); })} /></label>
+              <button onClick={() => edit((d) => { d.shared.product = { file: d.shared.product!.file, dx: 0, dy: 0, scale: 1 }; })}>제품 합성 전부 되돌리기</button>
+            </div>
+            {!colorIsNeutral(fx.color) && (
+              <span className="warn">제품 색을 바꿨습니다 ({fxSummary(fx)}). 실물과 달라 보이면 광고 심의·"실물과 다름" 민원 위험이 있어 검수 자료에 기록됩니다. 실물과 비교해 확인하세요.</span>
+            )}
           </div>
         )}
         {doc.shared.logo ? (

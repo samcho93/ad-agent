@@ -1,9 +1,10 @@
 import { type Box, type ComposeDoc, type Fit, type Placed, type SizeKey, type Variant, fitText, layoutFor, overlapIssues, sceneOf, sizeShape } from "@/core/compose";
 import { FONT_FAMILY, WEIGHT } from "./fonts";
+import { type ProductFx, applyColor, colorIsNeutral, colorStats, featherAlpha, fxOf, matchColor, rotatedBounds } from "@/core/productFx";
 
 /**
  * 합성 엔진 (브라우저 캔버스, 템플릿 banner-square-v1).
- * 그리는 순서: 배경 → 문구 쪽 그라데이션 → 제품 누끼(원본 그대로) → 헤드라인·서브 → 버튼 → 로고(원본 파일).
+ * 그리는 순서: 배경 → 문구 쪽 그라데이션 → 글자 뒤 띠 → 제품 그림자 → 제품 누끼(원본 사진, 사람이 정한 보정만) → 헤드라인·서브 → 버튼 → 로고(원본 파일).
  * 이미지 안에 글자를 AI로 만들지 않는다. 글자는 여기서 폰트로 그린다 (절대 규칙 3).
  */
 export interface Sources {
@@ -31,19 +32,125 @@ function drawCover(ctx: CanvasRenderingContext2D, img: Sources["scene"], W: numb
   ctx.drawImage(img, -(w - W) * (0.5 + cx), -(h - H) * (0.5 + cy), w, h);
 }
 
-/** 제품을 그리고, 실제로 보이는 부분(투명하지 않은 픽셀)의 사각형을 돌려준다 */
-function drawContain(ctx: CanvasRenderingContext2D, img: NonNullable<Sources["product"]>, box: Box, scale: number, dx: number, dy: number): Box | null {
-  if (box.w <= 0 || box.h <= 0) return null;
-  const s = Math.min(box.w / img.width, box.h / img.height) * scale;
+type Img = NonNullable<Sources["product"]>;
+
+/** 그린 제품의 자리 (미리보기에서 끌어 옮길 때 씀). 캔버스마다 마지막 값 */
+export const productFrames = new WeakMap<HTMLCanvasElement, { box: Box; area: Box }>();
+
+/** 보정(색·가장자리)을 적용한 제품 그림. 같은 크기·같은 값이면 다시 만들지 않는다 */
+const layerCache = new WeakMap<object, Map<string, HTMLCanvasElement>>();
+function productLayer(img: Img, w: number, h: number, fx: ProductFx): CanvasImageSource {
+  if (colorIsNeutral(fx.color) && fx.feather <= 0) return img;
+  const W = Math.max(1, Math.round(w));
+  const H = Math.max(1, Math.round(h));
+  const key = `${W}x${H}|${JSON.stringify(fx.color)}|${fx.feather}`;
+  let m = layerCache.get(img);
+  if (!m) layerCache.set(img, (m = new Map()));
+  const hit = m.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.drawImage(img, 0, 0, W, H);
+  try {
+    const d = g.getImageData(0, 0, W, H);
+    applyColor(d.data, fx.color);
+    featherAlpha(d.data, W, H, fx.feather * Math.min(W, H));
+    g.putImageData(d, 0, 0);
+  } catch {
+    /* 픽셀을 읽을 수 없으면 보정 없이 */
+  }
+  if (m.size > 12) m.clear();
+  m.set(key, c);
+  return c;
+}
+
+/** 제품을 (그림자 → 보정한 제품 순으로) 그리고, 실제로 보이는 부분의 사각형을 돌려준다 */
+function drawProduct(ctx: CanvasRenderingContext2D, img: Img, area: Box, p: { scale: number; dx: number; dy: number; fx?: Partial<ProductFx> }): Box | null {
+  if (area.w <= 0 || area.h <= 0) return null;
+  const fx = fxOf(p);
+  const s = Math.min(area.w / img.width, area.h / img.height) * p.scale;
   const w = img.width * s;
   const h = img.height * s;
-  const cx = box.x + box.w / 2 + dx * box.w;
-  const cy = box.y + box.h / 2 + dy * box.h;
-  const x0 = cx - w / 2;
-  const y0 = cy - h / 2;
-  ctx.drawImage(img, x0, y0, w, h);
+  const cx = area.x + area.w / 2 + p.dx * area.w;
+  const cy = area.y + area.h / 2 + p.dy * area.h;
   const a = alphaBounds(img);
-  return { x: x0 + a.x * w, y: y0 + a.y * h, w: a.w * w, h: a.h * h };
+  // 보이는 부분 (반전·회전 반영)
+  const ax = fx.flip ? 1 - a.x - a.w : a.x;
+  const vis = rotatedBounds({ x: cx - w / 2 + ax * w, y: cy - h / 2 + a.y * h, w: a.w * w, h: a.h * h }, cx, cy, fx.rotate);
+  const layer = productLayer(img, w, h, fx);
+  const sh = fx.shadow;
+  const unit = vis.h;
+
+  // 바닥 그림자: 보이는 부분 아래에 납작한 타원 (방향만큼 옆으로 밀림)
+  if (sh.kind === "ground" && sh.opacity > 0) {
+    const t = (sh.angle * Math.PI) / 180;
+    const rx = vis.w * 0.5 * (1 + sh.blur);
+    const ry = Math.max(2, vis.h * (0.035 + sh.blur * 0.25));
+    const gx = vis.x + vis.w / 2 + Math.cos(t) * sh.distance * unit;
+    const gy = vis.y + vis.h - ry * 0.35 + Math.max(0, Math.sin(t)) * sh.distance * unit * 0.3;
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.scale(1, ry / rx);
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    grad.addColorStop(0, `rgba(0,0,0,${sh.opacity})`);
+    grad.addColorStop(0.55, `rgba(0,0,0,${sh.opacity * 0.45})`);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.save();
+  if (sh.kind === "drop" && sh.opacity > 0) {
+    const t = (sh.angle * Math.PI) / 180;
+    ctx.shadowColor = `rgba(0,0,0,${sh.opacity})`;
+    ctx.shadowBlur = sh.blur * unit;
+    ctx.shadowOffsetX = Math.cos(t) * sh.distance * unit;
+    ctx.shadowOffsetY = Math.sin(t) * sh.distance * unit;
+  }
+  ctx.translate(cx, cy);
+  if (fx.rotate) ctx.rotate((fx.rotate * Math.PI) / 180);
+  if (fx.flip) ctx.scale(-1, 1);
+  ctx.drawImage(layer, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  return vis;
+}
+
+/**
+ * 배경에 자동 맞춤: 제품이 놓인 자리의 배경 색과 제품 색을 비교해 색 보정값을 낸다 (절반만 당김).
+ * 반환값을 슬라이더에 넣고 사람이 더 고친다.
+ */
+export function matchProductColor(doc: ComposeDoc, size: SizeKey, src: Sources, strength = 0.5): ProductFx["color"] | null {
+  if (!src.product || !doc.shared.product) return null;
+  const L = layoutFor(size, doc.shared.copySpace);
+  if (L.product.w <= 0) return null;
+  try {
+    const c = document.createElement("canvas");
+    c.width = L.W;
+    c.height = L.H;
+    const g = c.getContext("2d", { willReadFrequently: true })!;
+    const sc = sceneOf(doc.shared);
+    drawCover(g, src.scene, L.W, L.H, sc.zoom, sc.dx, sc.dy);
+    const box = drawProduct(document.createElement("canvas").getContext("2d")!, src.product, L.product, { ...doc.shared.product, fx: undefined });
+    const b = box ?? L.product;
+    const x = Math.max(0, Math.floor(b.x)), y = Math.max(0, Math.floor(b.y));
+    const w = Math.max(1, Math.min(L.W - x, Math.ceil(b.w))), h = Math.max(1, Math.min(L.H - y, Math.ceil(b.h)));
+    const scene = colorStats(g.getImageData(x, y, w, h).data);
+    const k = Math.min(1, 256 / Math.max(src.product.width, src.product.height));
+    const pc = document.createElement("canvas");
+    pc.width = Math.max(1, Math.round(src.product.width * k));
+    pc.height = Math.max(1, Math.round(src.product.height * k));
+    const pg = pc.getContext("2d", { willReadFrequently: true })!;
+    pg.drawImage(src.product, 0, 0, pc.width, pc.height);
+    const prod = colorStats(pg.getImageData(0, 0, pc.width, pc.height).data);
+    return matchColor(prod, scene, strength);
+  } catch {
+    return null;
+  }
 }
 
 /** 누끼 이미지에서 투명하지 않은 부분의 범위 (0~1 비율). 계산할 수 없으면 전체 */
@@ -170,7 +277,9 @@ export function renderBanner(doc: ComposeDoc, variant: Variant, size: SizeKey, s
     else if (side === "왼쪽") ctx.fillRect(0, 0, Math.min(L.W, L.text.x + L.text.w + pad), L.H);
     else ctx.fillRect(Math.max(0, L.text.x - pad), 0, L.W, L.H);
   }
-  productBox = src.product && doc.shared.product ? drawContain(ctx, src.product, L.product, doc.shared.product.scale, doc.shared.product.dx, doc.shared.product.dy) : null;
+  productBox = src.product && doc.shared.product ? drawProduct(ctx, src.product, L.product, doc.shared.product) : null;
+  if (productBox) productFrames.set(canvas, { box: productBox, area: L.product });
+  else productFrames.delete(canvas);
 
   ctx.fillStyle = doc.shared.textColor;
   ctx.shadowColor = doc.shared.textColor === "#ffffff" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.35)";

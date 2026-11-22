@@ -4,6 +4,7 @@ import type { Idea } from "./ideas";
 import type { ImagesDoc } from "./images";
 import { factIssues, type Issue } from "./validate";
 import { type ProductRule, headlineLength } from "./productRules";
+import { type ProductFx, fxOf } from "./productFx";
 
 /* ------------------------------------------------------------------ */
 /* 1. 합성 명세                                                          */
@@ -37,7 +38,8 @@ export type Variant = "A" | "B";
 export interface SharedLayout {
   template: "banner-square-v1";
   image: string; // 배경 (04_images/...)
-  product: { file: string; dx: number; dy: number; scale: number } | null; // 누끼: 영역 중심 기준 이동(-0.5~0.5), 크기 배율
+  /** 누끼: 영역 중심 기준 이동(-0.5~0.5, 직접 끌면 그 밖으로도), 크기 배율, 합성 보정(그림자·색·가장자리·회전. 없으면 보정 없음) */
+  product: { file: string; dx: number; dy: number; scale: number; fx?: ProductFx } | null;
   logo: { file: string; corner: Corner; scale: number } | null;
   copySpace: CopySpace;
   textColor: "#ffffff" | "#1f1d1a";
@@ -89,7 +91,7 @@ export function toComposeSpec(caseId: string, doc: ComposeDoc, v: Variant) {
     accent: { subColor: c.subColor ?? "" },
     textColor: doc.shared.textColor,
     image: doc.shared.image,
-    product: doc.shared.product,
+    product: doc.shared.product ? { ...doc.shared.product, fx: fxOf(doc.shared.product) } : null,
     logo: doc.shared.logo,
     copySpace: doc.shared.copySpace,
     overlay: { side: doc.shared.copySpace, strength: doc.shared.overlay },

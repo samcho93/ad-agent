@@ -1,3 +1,4 @@
+import { fxOf, fxSummary } from "@/core/productFx";
 import { readSkill } from "@/core/skills";
 import { blobToBase64 } from "@/core/caseService";
 import type { ImageQaFn } from "@/core/qaService";
@@ -45,6 +46,9 @@ export function imageQaWith(gen: Generator, log?: (entry: Record<string, unknown
       "</얹은_문구>",
       input.doc.shared.logo ? `원본 로고 파일을 ${{ tl: "왼쪽 위", tr: "오른쪽 위", bl: "왼쪽 아래", br: "오른쪽 아래" }[input.doc.shared.logo.corner]}에 얹었다 (320x100 제외). 이 로고는 정상이다.` : "로고는 얹지 않았다. 이미지 안에 로고처럼 보이는 것이 있으면 AI가 만든 것이다.",
       input.doc.shared.product ? "제품은 원본 사진에서 오려(누끼) 얹었다. 제품 포장에 원래 있는 글자·로고는 정상이다." : "",
+      input.doc.shared.product && fxSummary(fxOf(input.doc.shared.product))
+        ? `사람이 합성 단계에서 제품 누끼에 보정을 적용했다: ${fxSummary(fxOf(input.doc.shared.product))}. 그림자·회전·반전·가장자리는 합성 효과다. 색(밝기·대비·채도·색온도) 보정으로 원본 사진과 색이 다르면 productMatch 에 "색 보정으로 실물과 다르게 보일 수 있음"을 적는다.`
+        : "",
       "320x100 은 작은 띠 배너라 서브카피와 로고를 넣지 않는다.",
     ]
       .filter(Boolean)
